@@ -17,11 +17,11 @@
 <td COLSPAN=3>
 <blockquote>
 <p><p>
-The <tt><b><A HREF="crash_sources/extensions/echo.c">echo.c</a></b></tt> extension module can
+The <tt><b><A HREF="https://github.com/crash-utility/crash-extensions/blob/master/echo.c">echo.c</a></b></tt> extension module can
 be used as a simple template for creating an extension module to implement a new command.
 <p>
 Crash extension modules are required to <tt>#include</tt> the 
-<A HREF="crash_sources/defs.h"><tt>defs.h</tt></a>
+<A HREF="https://github.com/crash-utility/crash/blob/master/defs.h"><tt>defs.h</tt></a>
 file from the top-level directory of crash source tree.
 There are three suggested manners for building a module:
 <ol>
@@ -42,7 +42,7 @@ by the <tt>dlopen(3)</tt> man page.
 <p>
 As a convenience, the crash utility's <I>crash-&lt;version>.src.rpm</I> package builds a <I>crash-devel</i> sub-package,
 which installs
-<A HREF="crash_sources/defs.h"><tt>defs.h</tt></a>
+<A HREF="https://github.com/crash-utility/crash/blob/master/defs.h"><tt>defs.h</tt></a>
 into <i>/usr/include/crash/defs.h</i>.
 </li>
 <li>
@@ -60,7 +60,7 @@ copy it to the <I>crash-&lt;version&gt;/extensions</I> subdirectory, and enter t
 </li>
 <li>
 Lastly, some extension modules that do have both <i>&lt;module>.c</i> and <i>&lt;module>.mk</i> files
-may be built without the crash source tree if the <A HREF="crash_sources/defs.h"><tt>defs.h</tt></a> file
+may be built without the crash source tree if the <A HREF="https://github.com/crash-utility/crash/blob/master/defs.h"><tt>defs.h</tt></a> file
 is located in the current directory or in the <i>/usr/include/crash</i> directory:
 <p>
 <tt>&nbsp;&nbsp;$ make -f <i>&lt;module>.mk</i></tt><br>
@@ -69,10 +69,10 @@ is located in the current directory or in the <i>/usr/include/crash</i> director
 </ol>
 To add the module's command(s) to a running crash session, enter:
 <p>
-<tt>&nbsp;&nbsp;crash> <A HREF="extensions/help_extend.html">extend</a> &lt;<I>path-to</I>&gt;/&lt;<I>module</I>>.so</tt>
+<tt>&nbsp;&nbsp;crash> <A HREF="help_pages/extend.html">extend</a> &lt;<I>path-to</I>&gt;/&lt;<I>module</I>>.so</tt>
 <p>
 The command(s) registered by the extension module will appear in the
-crash <A HREF="extensions/help_help.html"><tt>help</tt></A> menu.  
+crash <A HREF="help_pages/help.html"><tt>help</tt></A> menu.  
 The module can be installed automatically if the
 <tt>extend</tt> command above is entered in either <I>./.crashrc</I> 
 or <I>$HOME/.crashrc</I>.
