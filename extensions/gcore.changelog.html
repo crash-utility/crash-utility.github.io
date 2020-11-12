@@ -6,6 +6,55 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#000066" vlink="#333399" alink="#FF0000">
 <pre>
 
+This is the release of crash gcore command, version 1.6.0.
+
+This release includes the following 1 new feature and 2 bug fixes.
+
+This is tested on the latest kernels on Fedora 33, RHEL8, RHEL7 and
+RHEL6 on x86_64.
+
+Note that ZRAM support is not included in this release because some
+patch set is still needed in crash utility.
+
+ChangeLog:
+
+- NT_FILE note information is newly supported for tasks in both 64-bit
+  and 32-bit compatible mode:
+    # LANG=C eu-readelf -n core.1.systemd | awk '/FILE$/ {f=1} f == 1 {print $0}' | head -n 10
+      CORE               12957  FILE
+        240 files:
+          564b290de000-564b29112000 00000000 212992      /usr/lib/systemd/systemd
+          564b29112000-564b291de000 00104000 835584      /usr/lib/systemd/systemd
+          564b291de000-564b2923d000 00500000 389120      /usr/lib/systemd/systemd
+          564b2923d000-564b29282000 006d6000 282624      /usr/lib/systemd/systemd
+          564b29282000-564b29283000 0082f000 4096        /usr/lib/systemd/systemd
+          7ffbf12c2000-7ffbf134c000 00000000 565248      /etc/selinux/targeted/contexts/files/file_contexts.bin
+          7ffbf1352000-7ffbf135a000 00000000 32768       /usr/lib64/libnl-3.so.200.26.0
+          7ffbf135a000-7ffbf1369000 00028000 61440       /usr/lib64/libnl-3.so.200.26.0
+  (thirtsa.dreyfus@intel.com, d.hatayama@fujitsu.com)
+
+- Fix failure of collecting vDSO mapping if compat vDSO is disabled
+  due to wrongly designed condition for compat tasks that tries to
+  determine vDSO mapping based on VDSO_HIGH_BASE. Without this patch,
+  vDSO mapping page is not collected for tasks running in 32-bit
+  compat mode and thus displaying backtrace by gdb's bt command for
+  the tasks could be incomplete.
+  (d.hatayama@fujitsu.com)
+
+- Fix failure of invalid structure member offset with the message
+  "gcore: invalid structure member offset:
+  thread_struct_io_bitmap_max" due to change of kernel data structure
+  for io bitmap by the commit <577d5cd7e585> ("x86/ioperm: Move
+  iobitmap data into a struct").
+  (lijiang@redhat.com, d.hatayama@fujitsu.com)
+
+MD5 CheckSum:
+
+    # md5sum crash-gcore-command-1.6.0.tar.gz
+    889843438ad702807d48cccfdee94e89  crash-gcore-command-1.6.0.tar.gz
+
+
+
 This is the release of crash gcore command, version 1.5.1.
 
 This release includes the following 2 bug fixes.
