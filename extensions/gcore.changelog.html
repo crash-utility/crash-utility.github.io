@@ -6,6 +6,25 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#000066" vlink="#333399" alink="#FF0000">
 <pre>
 
+This is the release of crash gcore command, version 1.6.1.
+
+This release includes the following 1 bug fix.
+
+ChangeLog:
+
+- Fix miscalculation of the starting address of the pt_regs structure
+  on the kernel stack on aarch64. Without fix for this issue, bt
+  command displays corrupt backtrace. This fix corresponds to the
+  commit c975008e61121ef8785622c3bc26964da8fe0deb in crash utility.
+  (zhaoqianli@xiaomi.com)
+
+MD5 CheckSum:
+
+    # md5sum crash-gcore-command-1.6.1.tar.gz
+    a466baa568eeb495edf8824432c4cde8  crash-gcore-command-1.6.1.tar.gz
+
+
+
 This is the release of crash gcore command, version 1.6.0.
 
 This release includes the following 1 new feature and 2 bug fixes.
