@@ -302,7 +302,7 @@ Author: NEC Japan
 </tr>
 
 <tr>
-<td ALIGN=CENTER><tt><b><A HREF="https://github.com/crash-utility/crash-extensions/blob/master/trace.c">trace.c</a></b></tt></td>
+<td ALIGN=CENTER><tt><b><A HREF="https://github.com/fujitsu/crash-trace/blob/master/trace.c">trace.c</a></b></tt></td>
 <td ALIGN=CENTER VALIGN=CENTER>
 <tt><b><A HREF="extensions/trace_help_trace.html">trace</a></b></tt>
 </td>
@@ -328,11 +328,14 @@ and <I>crash-&lt;version>.tar.gz</I> files, and the compiled module is included 
 <p>
 </li>
 <li>
+Package website: <A HREF="https://github.com/fujitsu/crash-trace">https://github.com/fujitsu/crash-trace</A>
+</li>
+<li>
 Author: Lai Jiangshan&nbsp;&nbsp;&lt;laijs@cn.fujitsu.com>
 <p>
 </li>
 <li>
-Maintainer: Xu Huan&nbsp;&nbsp;&lt;xuhuan.fnst@cn.fujitsu.com>
+Maintainer: Daisuke Hatayama&nbsp;&nbsp;&lt;d.hatayama@fujitsu.com>
 <a name=GCORE>
 </li>
 </ul>
@@ -343,7 +346,7 @@ Maintainer: Xu Huan&nbsp;&nbsp;&lt;xuhuan.fnst@cn.fujitsu.com>
 
 <tr>
 <td ALIGN=CENTER>
-<tt><b><A HREF="https://github.com/crash-utility/crash-extensions/raw/master/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</a></b></tt></td>
+<tt><b><A HREF="https://github.com/fujitsu/crash-gcore/releases/download/v1.6.1/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</A></b></tt></td>
 <td ALIGN=CENTER VALIGN=CENTER>
 <tt><b><A HREF="extensions/gcore_help_gcore.html">gcore</a></b></tt>
 </td>
@@ -358,7 +361,7 @@ The module supports the X86, X86_64, ARM, ARM64, MIPS and PPC64 architectures.
 <li>
 If <I>/usr/include/crash/defs.h</I> exists, the module may be built like so:
 <br>
-<tt>&nbsp;&nbsp;$ tar xzf <A HREF="https://github.com/crash-utility/crash-extensions/raw/master/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</a></tt><br>
+<tt>&nbsp;&nbsp;$ tar xzf <A HREF="https://github.com/fujitsu/crash-gcore/releases/download/v1.6.1/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</A></tt><br>
 <tt>&nbsp;&nbsp;$ cd crash-gcore-command-1.6.1</tt><br>
 <tt>&nbsp;&nbsp;$ make -f gcore.mk</tt><br>
 <br>
@@ -366,7 +369,7 @@ If <I>/usr/include/crash/defs.h</I> exists, the module may be built like so:
 <li>
 Alternatively, <tt><A HREF="https://github.com/crash-utility/crash/blob/master/defs.h">defs.h</a></tt> may be copied to the current directory:
 <br>
-<tt>&nbsp;&nbsp;$ tar xzf <A HREF="https://github.com/crash-utility/crash-extensions/raw/master/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</a></tt><br>
+<tt>&nbsp;&nbsp;$ tar xzf <A HREF="https://github.com/fujitsu/crash-gcore/releases/download/v1.6.1/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</A></tt><br>
 <tt>&nbsp;&nbsp;$ cd crash-gcore-command-1.6.1</tt><br>
 <tt>&nbsp;&nbsp;$ cp &lt;<I>path-to</I>>/<A HREF="https://github.com/crash-utility/crash/blob/master/defs.h">defs.h</a> .</tt><br>
 <tt>&nbsp;&nbsp;$ make -f gcore.mk</tt><br>
@@ -375,18 +378,21 @@ Alternatively, <tt><A HREF="https://github.com/crash-utility/crash/blob/master/d
 <li>
 To build the module from the top-level <I>crash-&lt;version&gt</I> directory, enter:
 <br>
-<tt>&nbsp;&nbsp;$ tar xzf <A HREF="https://github.com/crash-utility/crash-extensions/raw/master/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</a></tt><br>
+<tt>&nbsp;&nbsp;$ tar xzf <A HREF="https://github.com/fujitsu/crash-gcore/releases/download/v1.6.1/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</A></tt><br>
 <tt>&nbsp;&nbsp;$ mv crash-gcore-command-1.6.1/* extensions</tt><br>
 <tt>&nbsp;&nbsp;$ make extensions</tt><br>
 <p>
 </li>
 <li>
-This module's source files are self-contained in <TT><A HREF="https://github.com/crash-utility/crash-extensions/raw/master/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</a></TT>.
+This module's source files are self-contained in <TT><A HREF="https://github.com/fujitsu/crash-gcore/releases/download/v1.6.1/crash-gcore-command-1.6.1.tar.gz">crash-gcore-command-1.6.1.tar.gz</A></TT>.
 <p>
 </li>
 <li>
 <A HREF="extensions/gcore.changelog.html">Changelog</a></tt>
 <p>
+</li>
+<li>
+Package website: <A HREF="https://github.com/fujitsu/crash-gcore">https://github.com/fujitsu/crash-gcore</A>
 </li>
 <li>
 Author: Daisuke Hatayama&nbsp;&nbsp;&lt;d.hatayama@fujitsu.com>
