@@ -10,6 +10,243 @@
 <body bgcolor="#FFFFFF" text="#000000" link="#000066" vlink="#333399" alink="#FF0000">
 <pre>
 
+<a name=7_3_0> </a>
+7.3.0    - Add support for new lockless righbuffer that Linux 5.10 introduced.
+           Without the two patches, crash fails during session initialization
+           or "log" command fails with the error message:
+
+             crash: cannot determine length of symbol: log_end
+
+           (john.ogness@linutronix.de, nborisov@suse.com, k-hagio-ab@nec.com)
+
+         - Add support for VC exception stack on x86_64 Linux 5.10 and later
+           kernels that contain commit 02772fb9b68e ("x86/sev-es: Allocate and
+           map an IST stack for #VC handler").
+           (amakhalov@vmware.com)
+
+         - Fix regression for raw RAM dumpfiles.  Commit f42db6a33f0e ("Support
+           core files with "unusual" layout") increased the minimal file size
+           from MIN_NETDUMP_ELF_HEADER_SIZE to SAFE_NETDUMP_ELF_HEADER_SIZE
+           which can lead to crash rejecting raw RAM dumpfiles.  Without the
+           patch, the crash fails to start a session with the error message:
+
+             /var/tmp/ramdump_elf_XXXXXX: ELF header read: No such file or directory
+             crash: malformed ELF file: /var/tmp/ramdump_elf_XXXXXX
+
+           (zhaoqianli@xiaomi.com)
+
+         - Update mapping symbol filter in arm64_verify_symbol() to support the
+           long form of mapping symbols, e.g. "$x.&lt;any...>".  Without the
+           patch, the "dis" command cannot completely parse out the disassembly
+           of a function that has mapping symbols in the long form and misses
+           the tail part of the function.
+           (zhaoqianli@xiaomi.com)
+
+         - Move extensins/Makefile's ping check to recipe script.  Without this
+           patch, in an environment where ping to github.com does not work,
+           "make clean" at the top-level crash directory always takes about 10
+           seconds unnecessarily.
+           (k-hagio-ab@nec.com)
+
+         - Fix for a segmentation fault when analyzing arm64 kernels that are
+           configured with CONFIG_IKCONFIG and have a strange entry that does
+           not contain the delimiter "=", such as "CONFIG_SECU+[some hex data]".
+           Without the patch, in the add_ikconfig_entry() function, strtok_r()
+           interprets it as consisting of a single token and the val variable
+           is set to NULL, and then strdup() crashes.
+           (liuyun01@kylinos.cn)
+
+         - Fix a couple of issues that were detected by valgrind.
+           (d.hatayama@fujitsu.com)
+
+         - Add ability to un-set scope.  The ability can come in very useful
+           when running automated pykdump scripts and needing scope to be
+           cleared between script runs.
+           (jpittman@redhat.com)
+
+         - Fix "sys [-t]|mod -S" after "mod -t" when crash runs with -s option.
+           Without the patch, the "sys [-t]" and "mod -S" options after "mod -t"
+           option fail with the error message:
+
+             sys: invalid structure member offset: tnt_false
+                  FILE: kernel.c  LINE: 11203  FUNCTION: show_kernel_taints_v4_10()
+
+           (k-hagio-ab@nec.com)
+
+         - Fix for "dev -d" option on Linux 5.11-rc1 and later kernels that
+           contains commit 0d02129e76edf91cf04fabf1efbc3a9a1f1d729a ("block:
+           merge struct block_device and struct hd_struct").  Without the patch,
+           the option fails with the error message:
+
+             dev: invalid structure member offset: hd_struct_dev
+
+           (k-hagio-ab@nec.com)
+
+         - Fix for "kmem -v" option on Linux 5.11-rc1 and later kernels that
+           contain commit 96e2db456135db0cf2476b6890f1e8b2fdcf21eb ("mm/vmalloc:
+           rework the drain logic").  Without the patch, the option will display
+           nothing or fail with the error message:
+
+             kmem: invalid kernel virtual address: &lt;address>  type: "vmlist addr"
+
+           (k-hagio-ab@nec.com)
+
+         - Add the base address of module to "mod" command output.  Currently
+           the command shows the address of the module struct, but it is
+           inconvenient to know the address range of the module, so extend to
+           show the base adddress.
+           (yeyunfeng@huawei.com, k-hagio-ab@nec.com)
+
+         - Increase the value of __PHYSICAL_MASK_SHIFT_XEN to 52.  The former
+           value of __PHYSICAL_MASK_SHIFT_XEN in crash (40) is smaller than the
+           kernel (52) since kernel commit 6f0e8bf167 (xen: support 52 bit
+           physical addresses in pv guests).  This can cause x86_64_pud_offset()
+           to lose the most significant bits of pgd_pte, leading to a failed
+           xen_m2p() translation, resulting in crash failing with an error
+           message like this:
+
+             crash: read error: physical address: ffffffffffffffff  type: "pud page"
+
+           (jbohac@suse.cz)
+
+         - Change log level print in older kernels.  In older kernels that have
+           the variable-length-record log_buf, the log level and the log
+           flags/facility are not separated.  Since the log level is only the
+           last three bits, and the flags/facility and level are separated in
+           5.10 and later kernels, only print those last three bits when using
+           'log -m'.
+           (jpittman@redhat.com)
+
+         - Reduce crash build log.  The verbose output of tar command when
+           extracting the GDB source files occupies more than the half of crash
+           build log.  It is not so helpful and makes the build log longer
+           needlessly especially on CI build test without the patch.
+           (k-hagio-ab@nec.com)
+
+         - Fix for "bt" command on Linux 5.12-rc1 and later x86_64 kernels that
+           contain commit 951c2a51ae75 ("x86/irq/64: Adjust the per CPU irq
+           stack pointer by 8").  Without the patch, the "bt" command and some
+           of its options that read irq stack fail with the error message:
+
+             bt: read of stack at &lt;address> failed".
+
+           (k-hagio-ab@nec.com)
+
+         - Add valgrind support for the crash's custom memory allocator.  This
+           helps detecting various memory errors on the crash's custom memory
+           allocator.
+           (d.hatayama@fujitsu.com)
+
+         - Fix for a couple of invalid read/write issues detected by valgrind.
+           (d.hatayama@fujitsu.com)
+
+         - Fix "struct" command to print member array of list_heads correctly.
+           Without the patch, due to the way that an array of list_head entries
+           are printed, parsing of them fails and the command does not print
+           anything:
+
+             crash> struct blk_mq_ctx.rq_completed ffffc447ffc0f740
+             crash>
+
+           (jpittman@redhat.com)
+
+         - Do not pass through 'sy' command to GDB.  The GDB 'symbol-file'
+           command is prohibited in the crash utility, but an abbreviation of
+           it, the 'sy' is not prohibited.  This can discard symbol table from
+           the current symbol file, and eventually caused the failure of crash
+           utility after executing the 'sys' command as below:
+
+             crash> sy
+             Discard symbol table from `/path/to/vmlinux'? (y or n) Please answer y or n.
+             Discard symbol table from `/path/to/vmlinux'? (y or n) No symbol file now.
+             crash> sys
+             double free or corruption (!prev)
+             Aborted (core dumped)
+
+           (lijiang@redhat.com)
+
+         - Refine zram related code for crash gcore command to support it.
+           (d.hatayama@fujitsu.com)
+
+         - Fix for the failure of 'set scope' command.  Without the patch,
+           some commands such as 'sys' may cause subsequent 'set scope'
+           commands to fail.
+           (lijiang@redhat.com)
+
+         - Fix for offset print for function pointers that return pointers.
+           In the show_member_offset() function, when trying to handle function
+           pointers, the case for "(*" is handled.  However, if the function
+           pointer returns a pointer or a pointer to a pointer, then the
+           condition is unhandled.  This results in the offset not being
+           printed without the patch, for example:
+
+             crash> struct -o offload_callbacks
+             struct offload_callbacks {
+                    struct sk_buff *(*gso_segment)(struct sk_buff *, netdev_features_t);
+                    struct sk_buff **(*gro_receive)(struct sk_buff **, struct sk_buff *);
+               [16] int (*gro_complete)(struct sk_buff *, int);
+             }
+
+           (jpittman@redhat.com)
+
+         - Change functions within extensions/echo.c to be static and document
+           the issue in code comments, for extensions developers who takes
+           echo.c as reference, to avoid the issue that symbols in extension
+           modules are overwritten by former loaded one if it's the same name.
+           (ltao@redhat.com)
+
+         - Fix for 'bt' command and options on Linux 5.8-rc1 and later x86_64
+           kernels that contain merge commit 076f14be7fc9.  The merged patches
+           changed the name of exception functions that have been used by the
+           crash utility to check the exception frame.  Without the patch, the
+           command and options cannot display it.
+           (k-hagio-ab@nec.com)
+
+         - Fix for xen kernels that contain commit edcb5cf84f05
+           ("x86/paravirt/xen: Remove xen_patch()").  Withouth the patch,
+           crash fails with an error message like this:
+
+             crash: seek error: physical address: 83640e000 type: "pud page"
+
+           (john.p.donnelly@oracle.com, k-hagio-ab@nec.com)
+
+         - Remove extensions/trace.c file, as the extension module moved to
+           the separate repository from the crash repository.
+           (k-hagio-ab@nec.com)
+
+         - Fix for uvtop conversion on ARM with LPAE.  Without the patch,
+           arm_uvtop() calls arm_lpae_vtop() with the LPAE and it can use
+           LPAE_VTOP() also for a user virtual address.  As a result, commands
+           that use uvtop conversion such as "ps -a", "gcore" fail as readmem()
+           for a uvaddr returns a seek error:
+
+             ps: cannot access user stack address: &lt;address>
+
+           (k-hagio-ab@nec.com)
+
+         - Handle 1GB block for VM_L3_4K on arm64 architecture.  Without the
+           patch, "vtop" command cannot display the block as a 1GB hugepage.
+           (johan.erlandsson@sony.com)
+
+         - Implement initial support for the MIP64 architecture.
+           (tangyouling@loongson.cn, chenhuacai@loongson.cn)
+
+         - Fix for HZ calculation using cfq_slice_async on Linux 4.8 and later
+           kernels that contain commit 9a7f38c42c2b ("cfq-iosched: Convert from
+           jiffies to nanoseconds").  Without the patch, the HZ calculation
+           results in a wrong and big value for machde->hz and crash can shows
+           a wrong uptime and timestamps in "log -T".
+           (martin.moore@hpe.com)
+
+         - Fix for HZ calculation on Linux 4.8 and later kernels that contain
+           commit 9a7f38c42c2b ("cfq-iosched: Convert from jiffies to
+           nanoseconds").  Without the patch, the HZ value can be set to a
+           hardcorded wrong value.
+           (k-hagio-ab@nec.com)
+
+         (04/27/21)
+
+
 <a name=7_2_9> </a>
 7.2.9    - Fix for an ARM64 gcc-10 compilation error.  Without the patch, the
            build of the embedded gdb module fails with an error message that
