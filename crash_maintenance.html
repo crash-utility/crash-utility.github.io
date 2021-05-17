@@ -1547,7 +1547,7 @@ It then applies the requisite patches to the GDB source tree:
 
 <TABLE WIDTH=800PX STYLE="PADDING-LEFT: 20PX"><TR><TD><BR>
 Back in the top-level <tt>gdb_merge</tt> stanza, the <tt>mergelibs</tt> 
-and <tt>mergobj</tt> files are created in the GDB
+and <tt>meregobj</tt> files are created in the GDB
 source directory for use by the final program linkage: 
 <pre>
   gdb_merge: force
@@ -1610,7 +1610,7 @@ recompiling any files that were changed in the updated <tt>gdb-</tt>&lt;<i>versi
 
 <TABLE WIDTH=800PX STYLE="PADDING-LEFT: 20PX"><TR><TD><BR>
 The initial build takes several minutes to compile
-the embedded GDB module and its bundled libaries.  When the GDB portion of the
+the embedded GDB module and its bundled libraries.  When the GDB portion of the
 build is complete, the <tt>crash</tt>-specific files in
 the top-level directory are compiled, archived into 
 a <tt>crashlib.a</tt> file, and ultimately linked into the <tt>crash</tt> binary:
@@ -2068,7 +2068,7 @@ pulls in the <tt>crashlib.a</tt> library:
                   $(TDEPLIBS) $(TUI_LIBRARY) $(CLIBS) $(LOADLIBES) $(shell /bin/cat mergelibs)
 </pre>
 <LI> the <tt>mergelibs</tt> file pulls in
-the additional required libaries:
+the additional required libraries:
 <pre>
   gdb$(EXEEXT): gdb.o $(LIBGDB_OBS) $(ADD_DEPS) $(CDEPS) $(TDEPLIBS)
           @rm -f gdb$(EXEEXT)
@@ -4179,7 +4179,7 @@ structure member offsets and sizes are stored in the global tables.
 <LI><tt>vm_init()</tt>
 <BLOCKQUOTE>
 Initializes a number of virtual memory related items that are typically stored
-in the <tt>vm_table</tt>.  It calls several other intialization functions,
+in the <tt>vm_table</tt>.  It calls several other initialization functions,
 such as <tt>sparse_mem_init()</tt>, <tt>node_table_init()</tt> and
 <tt>kmem_cache_init()</tt>.
 </BLOCKQUOTE>
@@ -4239,7 +4239,7 @@ Initializes structure member offsets and sizes associated with files and file sy
 <hr ALIGN=LEFT WIDTH=800PX style="border-top: 1px solid blue; background: transparent;">
 <TABLE WIDTH=800PX STYLE="PADDING-LEFT: 20PX">
 <TR><TD>
-The system statitics and the current task context information get displayed here:
+The system statistics and the current task context information get displayed here:
 </TD></TR>
 </TABLE>
 <hr ALIGN=LEFT WIDTH=800PX style="border-top: 1px solid blue; background: transparent;">
@@ -5657,7 +5657,7 @@ in <tt>defs.h</tt>
   #define error __error               /* avoid conflict with gdb error() */
 </pre>
 The <tt>__error()</tt> function accepts a varying number of arguments
-by using the C libary's <tt>va_start(3)</tt> facility:
+by using the C library's <tt>va_start(3)</tt> facility:
 
 <pre>
   int
@@ -5932,7 +5932,7 @@ the embedded GDB module without having to set up a <tt>gnu_request</tt> structur
 </pre>
 <p>
 The <tt>gdb_pass_through()</tt> function is a simpler manner of
-acessing GDB; it sets up a <tt>gnu_request</tt> structure
+accessing GDB; it sets up a <tt>gnu_request</tt> structure
 and calls <tt>gdb_interface()</tt>.  The <tt>fptr</tt> FILE pointer argument allows the
 overriding of the default output destination, and the <tt>flags</tt> argument
 is copied to the <tt>gnu_request.flags</tt> member.
@@ -6248,7 +6248,7 @@ and therefore are intermingled with
 command output.  This can get messy, and so it is sometimes
 preferable if the debug statements can be displayed on a different
 terminal.  To do so, the <tt>console</tt> function can be utilized,
-which accepts a varying number of arguments by using the C libary's va_start(3) facility:
+which accepts a varying number of arguments by using the C library's va_start(3) facility:
 <pre>
   int
   console(char *fmt, ...)
