@@ -34,7 +34,7 @@ NAME
 
 SYNOPSIS
   kmem [-f|-F|-c|-C|-i|-v|-V|-n|-z|-o|-h] [-p | -m member[,member]]
-       [[-s|-S|-r] [slab] [-I slab[,slab]]] [-g [flags]] [[-P] address]]
+       [[-s|-S|-S=cpu[s]|-r] [slab] [-I slab[,slab]]] [-g [flags]] [[-P] address]]
 
 DESCRIPTION
   This command displays information about the use of kernel memory.
@@ -50,10 +50,13 @@ DESCRIPTION
             kernels, the vm_zone_stat, vm_node_stat and vm_numa_stat tables,
             the cumulative page_states counter values if they exist, and/or 
             the cumulative, vm_event_states counter values if they exist.
-        -n  display memory node, memory section, and memory block data
-            and state; the state of each memory section state is encoded
-            as "P", "M", "O" and/or "E", meaning SECTION_MARKED_PRESENT,
-            SECTION_HAS_MEM_MAP, SECTION_IS_ONLINE and SECTION_IS_EARLY.
+        -n  display memory node, memory section, memory block data and state;
+            the state of each memory section is shown as the following flags:
+              "P": SECTION_MARKED_PRESENT
+              "M": SECTION_HAS_MEM_MAP
+              "O": SECTION_IS_ONLINE
+              "E": SECTION_IS_EARLY
+              "D": SECTION_TAINT_ZONE_DEVICE
         -z  displays per-zone memory statistics.
         -o  displays each cpu's offset value that is added to per-cpu symbol
             values to translate them into kernel virtual addresses.
@@ -82,6 +85,9 @@ DESCRIPTION
             slab data for each per-cpu slab is displayed, along with the
             address of each kmem_cache_node, its count of full and partial
             slabs, and a list of all tracked slabs.
+            Note: one can specify the per-cpu slab data to be displayed;
+            the cpu[s] can be given as "1,3,5", "1-3", "1,3,5-7,10",
+            "all", or "a" (shortcut for "all").
         -r  displays the accumulated basic kmalloc() slab data of each
             root slab cache and its children.  The kernel must contain the
             "slab_root_caches" list_head. (currently only available if

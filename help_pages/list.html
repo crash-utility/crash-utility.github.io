@@ -34,7 +34,7 @@ NAME
 
 SYNOPSIS
   list [[-o] offset][-e end][-[s|S] struct[.member[,member] [-l offset]] -[x|d]]
-       [-r|-B] [-h|-H] start
+       [-r|-B] [-h [-O head_offset]|-H] start
 
 DESCRIPTION
  
@@ -120,6 +120,15 @@ DESCRIPTION
     -S struct  Similar to -s, but instead of parsing gdb output, member values
                are read directly from memory, so the command works much faster
                for 1-, 2-, 4-, and 8-byte members.
+    -O offset  Only used in conjunction with -h; it specifies the offset of
+               head node list_head embedded within a data structure which is
+               different than the offset of list_head of other nodes embedded
+               within a data structure.
+               The offset may be entered in either of the following manners:
+
+                 1. in "structure.member" format.
+                 2. a number of bytes.
+
     -l offset  Only used in conjunction with -s, if the start address argument
                is a pointer to an embedded list head (or any other similar list
                linkage structure whose first member points to the next linkage
@@ -444,6 +453,27 @@ EXAMPLES
       comm = "sudo"
     ffff88005ac10180
       comm = "crash"
+
+  To display a liked list whose head node and other nodes are embedded within
+  either same or different data structures resulting in different offsets for
+  head node and other nodes, e.g. dentry.d_subdirs and dentry.d_child, the
+  -O option can be used:
+
+    crash&gt; list -o dentry.d_child -s dentry.d_name.name -O dentry.d_subdirs -h ffff9c585b81a180
+    ffff9c585b9cb140
+      d_name.name = 0xffff9c585b9cb178 ccc.txt
+    ffff9c585b9cb980
+      d_name.name = 0xffff9c585b9cb9b8 bbb.txt
+    ffff9c585b9cb740
+      d_name.name = 0xffff9c585b9cb778 aaa.txt
+
+  The dentry.d_subdirs example above is equal to the following sequence:
+
+    crash&gt; struct -o dentry.d_subdirs ffff9c585b81a180
+    struct dentry {
+      [ffff9c585b81a220] struct list_head d_subdirs;
+    }
+    crash&gt; list -o dentry.d_child -s dentry.d_name.name -H ffff9c585b81a220
 
 </pre>
 </td>
