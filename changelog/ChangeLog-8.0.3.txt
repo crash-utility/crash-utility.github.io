@@ -1,0 +1,1392 @@
+commit faed0502187315bfcc444b300568980207d5722a
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Wed Apr 26 10:53:15 2023 +0900
+
+    crash-8.0.2 -> crash-8.0.3
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 47216437e79ae0076da2594f7352d94aaca5e5d1
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Tue Apr 25 09:31:04 2023 +0900
+
+    Fix "net" command on kernel configured with CONFIG_IPV6=m
+    
+    On a kernel configured with CONFIG_IPV6=m, struct inet6_ifaddr is not
+    defined in kernel.  Without the patch, the "net" command fails with the
+    following error.
+    
+      net: invalid structure member offset: inet6_ifaddr_if_next
+           FILE: net.c  LINE: 1017  FUNCTION: get_device_ip6_address()
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 2c7310aa7c5d8c1531209d720de29bb2b20767e8
+Author: Tao Liu <ltao@redhat.com>
+Date:   Thu Apr 20 18:25:22 2023 +0800
+
+    Replace lseek/read into pread for kcore and vmcore reading
+    
+    Previously crash uses lseek/read for kcore and vmcore reading, this involves
+    2 syscalls. And we can replace them with pread, only 1 syscall is needed for
+    kcore/vmcore reading, and we can have a better performance. Please note there
+    are plenty of places in crash using lseek/read, this patch doesn't modify all
+    of them, just the most commonly used kcore and diskdump vmcore reading.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 538b9ed4564d90d133db7694fd49d1bf3be733f0
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Apr 10 11:41:16 2023 +0800
+
+    Fix "fuser" command to properly deal with an invalid argument
+    
+    The man page of the "fuser" command suggests that the argument can be a
+    full pathname or inode address. However, the "fuser" command accepts an
+    invalid argument and prints a bogus result as below:
+    
+      crash> fuser x
+       PID         TASK        COMM             USAGE
+      100507  ffff9914431f4c80  "packagekitd"    fd
+      100508  ffff991574e59980  "gmain"          fd
+      100509  ffff9914431f3300  "gdbus"          fd
+      102020  ffff991574400000  "sshd"           fd
+      102043  ffff991441d19980  "sshd"           fd
+    
+    The current fuser command has no checking mechanism to determine if an
+    argument is valid or not. Let's add it to handle such cases.
+    
+    With the patch:
+      crash> fuser x
+      fuser: invalid argument: x
+    
+    In addition, also add a note that fuser does not expect an argument other
+    than an inode address and full pathname, and if others are specified, the
+    output can be an unexpected result.
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 4ced103422610b8b41c279794ba9302b64223b67
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Thu Mar 23 13:18:07 2023 +0800
+
+    Fix "vm -M" option to properly deal with an invalid argument
+    
+    The "vm -M" option can accept an invalid address and print the virtual
+    memory data of a task without an error like this:
+    
+       crash> vm -M 0xdeadbeef
+       PID: 92960    TASK: ffff99157976cc80  CPU: 0    COMMAND: "crash"
+              MM               PGD          RSS    TOTAL_VM
+       ffff991573bfdf00  ffff9915857f2000  449020k  2427076k
+             VMA           START       END     FLAGS FILE
+       ffff99158718d1c8     400000     4de000 8000071 /home/crash/crash
+       ...
+    
+    The reasons are
+    - htoll() only converts a hexadecimal string to an unsigned long long
+       value and does not evaluate whether it's a valid kernel virtual
+       address or not, and
+    - The specified value is used only when the task's mm_struct is NULL.
+    
+    Also, this behavior is not described enough in its help text, so it's
+    confusing for users.
+    
+    Let's add a check on the converted value regardless of the task's
+    mm_struct and add a description of the behavior to its help text.
+    
+    With the patch:
+       crash> vm -M 0xdeadbeef
+       vm: invalid mm_struct address: 0xdeadbeef
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    [ kh: rewrote commit message ]
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 97269209aa7017be8a8bf02298c524b9c0d2d79f
+Author: Juergen Gross <jgross@suse.com>
+Date:   Wed Mar 15 12:18:50 2023 +0100
+
+    xen: adjust to new scheduler structures
+    
+    There has been a significant modification regarding scheduler data in
+    the Xen hypervisor (Xen commit d62fefa4d459). Adapt to new structures
+    and removed fields.
+    
+    Note that this is only the bare minimum to not let crash error out when
+    opening a vmcore in Xen mode with a recent Xen version.
+    
+    Signed-off-by: Juergen Gross <jgross@suse.com>
+
+commit 9ee564cd1a46d34a9af424b186356fb419484bd1
+Author: Juergen Gross <jgross@suse.com>
+Date:   Wed Mar 15 12:18:49 2023 +0100
+
+    xen: get stack address via stack_base array if available
+    
+    Since many years now the stack address of each percpu stack is
+    available via the stack_base[] array (Xen commit 3cb68d2b59ab made
+    it visible). Use that instead of the indirect method via the percpu
+    variables tss_init or tss_page, especially as the layout of tss_page
+    has changed in Xen 4.16 (Xen commit 91d26ed304ff5), resulting in the
+    stack no longer to be found.
+    
+    Signed-off-by: Juergen Gross <jgross@suse.com>
+
+commit 4a59c38be2cd12eb30a0489ec0a77d9bc64baa3b
+Author: Juergen Gross <jgross@suse.com>
+Date:   Wed Mar 15 12:18:48 2023 +0100
+
+    xen: fix stacksize
+    
+    The size of the percpu stack area of Xen on x86_64 is 8 pages, not 2.
+    This is the case since Xen commit 0b630aa340ec in 2007.
+    
+    While not really critical in its current usage, it should be corrected
+    nevertheless.
+    
+    Signed-off-by: Juergen Gross <jgross@suse.com>
+
+commit 489093c2183f4f0365d8957e7275cd88225942ce
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Fri Mar 10 02:38:26 2023 +0000
+
+    Fix "kmem -n" option to display memory blocks on Linux 6.3-rc1 and later
+    
+    Kernel commit d2bf38c088e0 ("driver core: remove private pointer from
+    struct bus_type") removed the bus_type.p member, and the "kmem -n"
+    option fails with the following error before displaying memory block
+    information on Linux 6.3-rc1 and later kernels.
+    
+      kmem: invalid structure member offset: bus_type_p
+            FILE: memory.c  LINE: 17852  FUNCTION: init_memory_block()
+    
+    Search bus_kset.list instead for subsys_private of memory subsys.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit ade71c3ec1d28751c3d6ba1eec71781bdff093d3
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Mar 7 19:04:08 2023 +0800
+
+    gdb: Fix an assertion failure in dw2_find_pc_sect_compunit_symtab()
+    
+    This is a partial backport patch from gdb commit 834eaf9201c1 ("Fix
+    crash in new DWARF indexer").
+    
+    Without the patch, the "dis -rl" option may abort due to an assertion
+    failure in gdb's dw2_find_pc_sect_compunit_symtab():
+    
+      crash> dis -rl ffffffff96ad716c
+      dwarf2/read.c:4928: internal-error: compunit_symtab* dw2_find_pc_sect_compunit_symtab(objfile*, bound_minimal_symbol, CORE_ADDR, obj_section*, int): Assertion `result != NULL' failed.
+      A problem internal to GDB has been detected,
+      further debugging may prove unreliable.
+      Quit this debugging session? (y or n) dwarf2/read.c:4928: internal-error: compunit_symtab* dw2_find_pc_sect_compunit_symtab(objfile*, bound_minimal_symbol, CORE_ADDR, obj_section*, int): Assertion `result != NULL' failed.
+      A problem internal to GDB has been detected,
+      further debugging may prove unreliable.
+      Aborted (core dumped)
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 5a652ed0c8db8d4c5891091b747470431054c717
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Mar 8 20:22:02 2023 +0800
+
+    Fix for "net -n" option to properly deal with an invalid argument
+    
+    The help/man page of the "net" command suggests that "-n" option can
+    accept two kinds of argument: PID or task_struct pointer.  However,
+    the "net -n" command accepts an invalid argument and shows the
+    namespace of the current context silently.  For example:
+    
+      crash> net -n 1000000000
+         NET_DEVICE     NAME   IP ADDRESS(ES)
+      ffff949dc11d7000  lo     127.0.0.1
+      ffff949dcc01c000  eno49  192.168.122.17
+    
+    With the patch, emit an error expectedly.
+    
+      crash> net -n 1000000000
+      net: invalid task or pid value: 1000000000
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 57dda56af5c78da5e79cc4a83839e86d3ff6ab43
+Author: Florian Weimer <fweimer@redhat.com>
+Date:   Tue Feb 14 08:06:39 2023 +0100
+
+    Fix C99 compatibility issues in embedded copy of GDB
+    
+    These issues have been fixed in upstream GDB already:
+    
+    In the file bfd/elf-bfd.h, startswith is now used in stead of
+    strncmp.  libiberty was fixed via an import from GCC.  Readline
+    8.1 has been imported and has these issues fixed upstream.
+    
+    While at it, also update the bundled copy of <sys/cdefs.h> in
+    gnulib.  This header file unfortunately shadows the glibc version,
+    causing build failures on ppc64le if it is too old.
+    
+    Related GDB commits:
+    0075c53724f7 Impport libiberty commit: 885b6660c17f from gcc mainline.
+    b4f26d541aa7 Import GNU Readline 8.1
+    9c9d63b15ad5 gnulib: update to 776af40e0
+    3f3328b816ee Use startswith more for strncmp function calls.
+    
+    Related glibc commit:
+    2337e04e21ba cdefs: Limit definition of fortification macros
+    
+    Related gnulib commit:
+    afeeb21058d1 libc-config: fix include problem on older Debian
+    
+    Signed-off-by: Florian Weimer <fweimer@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 38325fab533751a001b80481cec149213d125abb
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Mar 7 17:14:25 2023 +0800
+
+    Enhance "net" command to display IPv6 address of network interface
+    
+    Currently, the "net" command displays only the IPv4 address of a network
+    interface.  Support outputting IPv6 addresses.  For example:
+    
+    Without the patch:
+      crash> net
+         NET_DEVICE     NAME   IP ADDRESS(ES)
+      ffff8d01b1205000  lo     127.0.0.1
+      ffff8d0087e40000  eno1   192.168.122.2
+    
+    With the patch:
+      crash> net
+         NET_DEVICE     NAME       IP ADDRESS(ES)
+      ffff8d01b1205000  lo         127.0.0.1, ::1
+      ffff8d0087e40000  eno1       192.168.122.2, xxxx:xx:x:xxxx:xxxx:xxx:xxxx:xxxx, yyyy::yyyy:yyy:yyyy:yyyy
+    
+    Also align with longer device names.
+    
+    Related kernel commit:
+    502a2ffd7376 ("ipv6: convert idev_list to list macros")
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit d0d6cf868577fdca81c40633fa082dae1794294f
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Feb 22 14:32:09 2023 +0800
+
+    Fix for "search -u" option failing in maple tree kernel
+    
+    Kernel with maple tree enabled doesn't have mmap as a member of mm_struct[1],
+    so OFFSET(mm_struct_mmap) case needed to be handled differently for
+    maple tree kernel.
+    
+    Before:
+    crash> search -u a
+    
+    search: invalid structure member offset: mm_struct_mmap
+            FILE: memory.c  LINE: 14255  FUNCTION: address_space_start()
+    
+    [crash] error trace: 549500 => 548fff => 5f1c91 => 5f1c13
+    
+      5f1c13: OFFSET_verify.part.36+51
+      5f1c91: OFFSET_verify+49
+      548fff: address_space_start+106
+      549500: cmd_search+855
+    
+    search: invalid structure member offset: mm_struct_mmap
+            FILE: memory.c  LINE: 14255  FUNCTION: address_space_start()
+    
+    After:
+    crash> search -u a
+    7ffea63e6440: a
+    
+    [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=763ecb035029f500d7e6dc99acd1ad299b7726a1
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit daa43fa5324f2dd232ad72df2c6554646868f3b2
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Mon Feb 20 10:28:53 2023 +0900
+
+    x86_64: Fix "bt" command on kernels with random_kstack_offset=on
+    
+    On kernels configured with CONFIG_RANDOMIZE_KSTACK_OFFSET=y and
+    random_kstack_offset=on, a random offset is added to task stacks with
+    __kstack_alloca() at the beginning of do_syscall_64() and other syscall
+    entry functions.  This eventually does the following instruction.
+    
+      <do_syscall_64+32>:  sub    %rax,%rsp
+    
+    On the other hand, crash uses only a part of data for ORC unwinder to
+    unwind stacks and if an ip value doesn't have a usable ORC data, it
+    caluculates the frame size with parsing the assembly of the function.
+    
+    However, crash cannot calculate the frame size correctly with the
+    instruction above, and prints stale return addresses like this:
+    
+      crash> bt 1
+      PID: 1        TASK: ffff9c250023b880  CPU: 0    COMMAND: "systemd"
+        #0 [ffffb7e5c001fc80] __schedule at ffffffff91ae2b16
+        #1 [ffffb7e5c001fd00] schedule at ffffffff91ae2ed3
+        #2 [ffffb7e5c001fd18] schedule_hrtimeout_range_clock at ffffffff91ae7ed8
+        #3 [ffffb7e5c001fda8] ep_poll at ffffffff913ef828
+        #4 [ffffb7e5c001fe48] do_epoll_wait at ffffffff913ef943
+        #5 [ffffb7e5c001fe80] __x64_sys_epoll_wait at ffffffff913f0130
+        #6 [ffffb7e5c001fed0] do_syscall_64 at ffffffff91ad7169
+        #7 [ffffb7e5c001fef0] do_syscall_64 at ffffffff91ad7179             <<
+        #8 [ffffb7e5c001ff10] syscall_exit_to_user_mode at ffffffff91adaab2 << stale entries
+        #9 [ffffb7e5c001ff20] do_syscall_64 at ffffffff91ad7179             <<
+       #10 [ffffb7e5c001ff50] entry_SYSCALL_64_after_hwframe at ffffffff91c0009b
+           RIP: 00007f258d9427ae  RSP: 00007fffda631d60  RFLAGS: 00000293
+           ...
+    
+    To fix this, enhance the use of ORC data.  The ORC unwinder often uses
+    %rbp value, so keep it from exception frames and inactive task stacks.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 59c19818190dd4b7ae0dc2221586a4ad6f4fe905
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Feb 21 11:03:26 2023 +0800
+
+    Fix for "dis" command to correctly display the offset of disassembly code
+    
+    For gdb-10.2, the disassembly code may start with "=>", which needs to
+    be stripped when calculating the address. Otherwise, parsing the address
+    will fail because the current code always assumes that it starts with the
+    "0x". For example:
+    
+      crash> gdb disassemble 0xffffffffa2317add
+      Dump of assembler code for function native_queued_spin_lock_slowpath:
+         ...
+         0xffffffffa2317ad3 <+35>:    mov    %edx,%eax
+         0xffffffffa2317ad5 <+37>:    lock cmpxchg %ecx,(%rdi)
+      => 0xffffffffa2317ad9 <+41>:    cmp    %eax,%edx
+         0xffffffffa2317adb <+43>:    jne    0xffffffffa2317ac0 ...
+         0xffffffffa2317add <+45>:    pop    %rbp
+         ...
+    
+    Without the patch:
+      crash> dis 0xffffffffa2317add -r | tail -5
+      0xffffffffa2317ad3 <native_queued_spin_lock_slowpath+35>:     mov    %edx,%eax
+      0xffffffffa2317ad5 <native_queued_spin_lock_slowpath+37>:     lock cmpxchg %ecx,(%rdi)
+      0xffffffffa2317ad5 <native_queued_spin_lock_slowpath+37>:     cmp    %eax,%edx
+                                                           ^^
+      0xffffffffa2317adb <native_queued_spin_lock_slowpath+43>:     jne    0xffffffffa2317ac0 ...
+      0xffffffffa2317add <native_queued_spin_lock_slowpath+45>:     pop    %rbp
+    
+    With the patch:
+    
+      crash> dis 0xffffffffa2317add -r | tail -5
+      0xffffffffa2317ad3 <native_queued_spin_lock_slowpath+35>:     mov    %edx,%eax
+      0xffffffffa2317ad5 <native_queued_spin_lock_slowpath+37>:     lock cmpxchg %ecx,(%rdi)
+      0xffffffffa2317ad9 <native_queued_spin_lock_slowpath+41>:     cmp    %eax,%edx
+      0xffffffffa2317adb <native_queued_spin_lock_slowpath+43>:     jne    0xffffffffa2317ac0 ...
+      0xffffffffa2317add <native_queued_spin_lock_slowpath+45>:     pop    %rbp
+    
+    Reported-by: Vernon Lovejoy <vlovejoy@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit e0e6e4a7ee03b3d00b50a9e4db2f2ea6f7da0da3
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Feb 15 16:24:57 2023 +0800
+
+    Fix for "bt" command unnecessarily printing an exception frame
+    
+    Kernel commit 7d65f4a65532 ("irq: Consolidate do_softirq() arch overriden
+    implementations") renamed the call_softirq to do_softirq_own_stack, and
+    there is no exception frame also when coming from do_softirq_own_stack.
+    Without the patch, crash may unnecessarily output an exception frame with
+    a warning as below:
+    
+      crash> foreach bt
+      ...
+      PID: 0        TASK: ffff914f820a8000  CPU: 25   COMMAND: "swapper/25"
+       #0 [fffffe0000504e48] crash_nmi_callback at ffffffffa665d763
+       #1 [fffffe0000504e50] nmi_handle at ffffffffa662a423
+       #2 [fffffe0000504ea8] default_do_nmi at ffffffffa6fe7dc9
+       #3 [fffffe0000504ec8] do_nmi at ffffffffa662a97f
+       #4 [fffffe0000504ef0] end_repeat_nmi at ffffffffa70015e8
+          [exception RIP: clone_endio+172]
+          RIP: ffffffffc005c1ec  RSP: ffffa1d403d08e98  RFLAGS: 00000246
+          RAX: 0000000000000000  RBX: ffff915326fba230  RCX: 0000000000000018
+          RDX: ffffffffc0075400  RSI: 0000000000000000  RDI: ffff915326fba230
+          RBP: ffff915326fba1c0   R8: 0000000000001000   R9: ffff915308d6d2a0
+          R10: 000000a97dfe5e10  R11: ffffa1d40038fe98  R12: ffff915302babc40
+          R13: ffff914f94360000  R14: 0000000000000000  R15: 0000000000000000
+          ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+      --- <NMI exception stack> ---
+       #5 [ffffa1d403d08e98] clone_endio at ffffffffc005c1ec [dm_mod]
+       #6 [ffffa1d403d08ed0] blk_update_request at ffffffffa6a96954
+       #7 [ffffa1d403d08f10] scsi_end_request at ffffffffa6c9b968
+       #8 [ffffa1d403d08f48] scsi_io_completion at ffffffffa6c9bb3e
+       #9 [ffffa1d403d08f90] blk_complete_reqs at ffffffffa6aa0e95
+       #10 [ffffa1d403d08fa0] __softirqentry_text_start at ffffffffa72000dc
+       #11 [ffffa1d403d08ff0] do_softirq_own_stack at ffffffffa7000f9a
+      --- <IRQ stack> ---
+       #12 [ffffa1d40038fe70] do_softirq_own_stack at ffffffffa7000f9a
+          [exception RIP: unknown or invalid address]
+          RIP: 0000000000000000  RSP: 0000000000000000  RFLAGS: 00000000
+          RAX: ffffffffa672eae5  RBX: ffffffffa83b34e0  RCX: ffffffffa672eb12
+          RDX: 0000000000000010  RSI: 8b7d6c8869010c00  RDI: 0000000000000085
+          RBP: 0000000000000286   R8: ffff914f820a8000   R9: ffffffffa67a94e0
+          R10: 0000000000000286  R11: ffffffffa66fb4c5  R12: ffffffffa67a898b
+          R13: 0000000000000000  R14: fffffffffffffff8  R15: ffffffffa67a1e68
+          ORIG_RAX: 0000000000000000  CS: 0000  SS: ffffffffa672edff
+       bt: WARNING: possibly bogus exception frame
+       #13 [ffffa1d40038ff30] start_secondary at ffffffffa665fa2c
+       #14 [ffffa1d40038ff50] secondary_startup_64_no_verify at ffffffffa6600116
+       ...
+    
+    Reported-by: Marco Patalano <mpatalan@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 277da34dd5da8c1280d0d0fd7ce50499b31c3a58
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Feb 14 22:37:08 2023 +0800
+
+    Fix for "kmem -i" option to not print invalid values for CACHED
+    
+    The "kmem -i" option may output a bogus statistics for CACHED, which
+    might be observed when some extreme situations occur in kernel, such as
+    OOM, disk IO errors, etc.
+    
+    The following result of calculation may be a negative value, refer to
+    the dump_kmeminfo():
+      page_cache_size = nr_file_pages - swapper_space_nrpages - buffer_pages;
+    
+    As a result, the negative value will be converted to unsigned long
+    integer, eventually it overflows and is printed as big integers.
+    
+      crash> kmem -i
+                       PAGES        TOTAL      PERCENTAGE
+          TOTAL MEM  255314511     973.9 GB         ----
+               FREE   533574         2 GB    0% of TOTAL MEM
+               USED  254780937     971.9 GB   99% of TOTAL MEM
+             SHARED     1713       6.7 MB    0% of TOTAL MEM
+            BUFFERS      374       1.5 MB    0% of TOTAL MEM
+             CACHED     -114  70368744177664 GB  72251060080% of TOTAL MEM
+                        ^^^^  ^^^^^^^^^^^^^^     ^^^^^^^^^^^^
+             ...
+    
+    Let's normalize it to zero with an info message to fix such cornor cases.
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit c64a827e0bcab15e86f8fbacec141c2bf4b776ea
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Thu Feb 9 20:15:46 2023 +0800
+
+    Fix for "net -s" option to show IPv6 addresses on Linux 3.13 and later
+    
+    Currently, the "net -s" option fails to show IPv6 addresses and ports
+    for the SOURCE-PORT and DESTINATION-PORT columns on Linux 3.13 and later
+    kernels, which have kernel commit efe4208f47f907 ("ipv6: make lookups
+    simpler and faster").  For example:
+    
+      crash> net -s
+      PID: 305524   TASK: ffff9bc449895580  CPU: 6    COMMAND: "sshd"
+      FD      SOCKET            SOCK       FAMILY:TYPE SOURCE-PORT DESTINATION-PORT
+       3 ffff9bc446e9a680 ffff9bc4455b5940 UNIX:DGRAM
+       4 ffff9bc446e9c600 ffff9bc3b2b24e00 INET6:STREAM
+    
+    With the patch:
+    
+      crash> net -s
+      PID: 305524   TASK: ffff9bc449895580  CPU: 6    COMMAND: "sshd"
+      FD      SOCKET            SOCK       FAMILY:TYPE SOURCE-PORT DESTINATION-PORT
+       3 ffff9bc446e9a680 ffff9bc4455b5940 UNIX:DGRAM
+       4 ffff9bc446e9c600 ffff9bc3b2b24e00 INET6:STREAM xxxx:xx:x:xxxx:xxxx:xxxx:xxxx:xxxx-22 yyyy:yy:y:yyyy:yyyy:yyyy:yyyy:yyyy-44870
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 9253b40a0ecb2d365f89f0a5ebc28a01735c1d24
+Author: Aureau, Georges (Kernel Tools ERT) <georges.aureau@hpe.com>
+Date:   Wed Feb 8 12:09:03 2023 +0000
+
+    Fix "kmem -s|-S" not working properly on RHEL8.6 and later
+    
+    For CONFIG_SLAB_FREELIST_HARDENED, the crash memory.c:freelist_ptr()
+    code is checking for an additional bswap using a simple release test eg.
+    THIS_KERNEL_VERSION >= LINUX(5,7,0), basically checking for RHEL9 and
+    beyond.
+    
+    However, for RHEL8.6 and later, we have CONFIG_SLAB_FREELIST_HARDENED=y,
+    and we also have the additional bswap, but the current crash is not
+    handling this case, hence "kmem -s|-S" will not work properly, and free
+    objects will not be counted nor reported properly.
+    
+    An example from a RHEL8.6 x86_64 kdump, a kmem cache with a single slab
+    having 42 objects, only the freelist head is seen as free as crash can't
+    walk freelist next pointers, and crash is wrongly reporting 41 allocated
+    objects:
+    
+      crash> sys | grep RELEASE
+           RELEASE: 4.18.0-372.9.1.el8.x86_64
+      crash> kmem -s nfs_commit_data
+      CACHE             OBJSIZE  ALLOCATED     TOTAL  SLABS  SSIZE  NAME
+      ffff9ad40c7cb2c0      728         41        42      1    32k  nfs_commit_data
+    
+    When properly accounting for the additional bswap, we can walk the
+    freelist and find 38 free objects, and crash is now reporting only 4
+    allocated objects:
+    
+      crash> kmem -s nfs_commit_data
+      CACHE             OBJSIZE  ALLOCATED     TOTAL  SLABS  SSIZE  NAME
+      ffff9ad40c7cb2c0      728          4        42      1    32k  nfs_commit_data
+    
+    Signed-off-by: Georges Aureau <georges.aureau@hpe.com>
+
+commit 92de7c34b1f910abff4d77522f74454ea0263a90
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Feb 13 11:12:12 2023 +0800
+
+    Fix for "bt" command printing "bogus exception frame" warning
+    
+    Currently, the "bt" command may print a bogus exception frame
+    and the remaining frame will be truncated on x86_64 when using the
+    "virsh send-key <kvm guest> KEY_LEFTALT KEY_SYSRQ KEY_C" command
+    to trigger a panic from the KVM host. For example:
+    
+      crash> bt
+      PID: 0        TASK: ffff9e7a47e32f00  CPU: 3    COMMAND: "swapper/3"
+       #0 [ffffba7900118bb8] machine_kexec at ffffffff87e5c2c7
+       #1 [ffffba7900118c08] __crash_kexec at ffffffff87f9500d
+       #2 [ffffba7900118cd0] panic at ffffffff87edfff9
+       #3 [ffffba7900118d50] sysrq_handle_crash at ffffffff883ce2c1
+       ...
+       #16 [ffffba7900118fd8] handle_edge_irq at ffffffff87f559f2
+       #17 [ffffba7900118ff0] asm_call_on_stack at ffffffff88800fa2
+       --- <IRQ stack> ---
+       #18 [ffffba790008bda0] asm_call_on_stack at ffffffff88800fa2
+           RIP: ffffffffffffffff  RSP: 0000000000000124  RFLAGS: 00000003
+           RAX: 0000000000000000  RBX: 0000000000000001  RCX: 0000000000000000
+           RDX: ffffffff88800c1e  RSI: 0000000000000000  RDI: 0000000000000000
+           RBP: 0000000000000001   R8: 0000000000000000   R9: 0000000000000000
+           R10: 0000000000000000  R11: ffffffff88760555  R12: ffffba790008be08
+           R13: ffffffff87f18002  R14: ffff9e7a47e32f00  R15: ffff9e7bb6198e00
+           ORIG_RAX: 0000000000000000  CS: 0003  SS: 0000
+      bt: WARNING: possibly bogus exception frame
+      crash>
+    
+    The following related kernel commits cause the current issue, crash
+    needs to adjust the value of irq_eframe_link.
+    
+    Related kernel commits:
+    [1] v5.8: 931b94145981 ("x86/entry: Provide helpers for executing on the irqstack")
+    [2] v5.8: fa5e5c409213 ("x86/entry: Use idtentry for interrupts")
+    [3] v5.12: 52d743f3b712 ("x86/softirq: Remove indirection in do_softirq_own_stack()")
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 46344aa2f92b07ded52cf9841f8db24dd7fe67d7
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Jan 10 14:56:32 2023 +0800
+
+    Dump maple tree offset variables by "help -o"
+    
+    In the previous patches, some variables are added to offset_table and
+    size_table, print them out with "help -o" command.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 49f6c2095d82700b7845ad9a09cb6942cc114b52
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Jan 10 14:56:31 2023 +0800
+
+    Update the help text of "tree" command for maple tree
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 9efc1f68a44f6fe521e64efe4a3dc36e9ba0bbc1
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Jan 10 14:56:30 2023 +0800
+
+    Introduce maple tree vma iteration to vm_area_dump()
+    
+    Since memory.c:vm_area_dump() will iterate all vma, this patch mainly
+    introduces maple tree vma iteration to it.
+    
+    We extract the code which handles each vma into a function. If
+    mm_struct_mmap exist, aka the linked list of vma iteration available,
+    we goto the original way; if not and mm_struct_mm_mt exist, aka
+    maple tree is available, then we goto the maple tree vma iteration.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 222176a0a6c14b6a1cdcebb8dda020ccb17b90f8
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Jan 10 14:56:29 2023 +0800
+
+    Add do_maple_tree() for maple tree operations
+    
+    do_maple_tree() is similar to do_radix_tree() and do_xarray(), which
+    takes the same do_maple_tree_traverse entry as tree command.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 16a696762cbfe6a40312840fee2297f05fdefb21
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Jan 10 14:56:28 2023 +0800
+
+    Add maple tree support to "tree" command
+    
+    The maple tree is a new data structure for crash, so "tree" command
+    needs to support it for users to dump and view the content of maple
+    trees.  This patch achieves this by using ported mt_dump() and its
+    related functions from kernel and adapting them with "tree" command.
+    
+    Also introduce a new -v arg specifically for dumping the complete
+    content of a maple tree:
+    
+        crash> tree -t maple 0xffff9034c006aec0 -v
+    
+        maple_tree(ffff9034c006aec0) flags 309, height 2 root 0xffff9034de70041e
+    
+        0-18446744073709551615: node 0xffff9034de700400 depth 0 type 3 parent 0xffff9034c006aec1 contents:...
+          0-140112331583487: node 0xffff9034c01e8800 depth 1 type 1 parent 0xffff9034de700406 contents:...
+            0-94643156942847: (nil)
+            94643156942848-94643158024191: 0xffff9035131754c0
+            94643158024192-94643160117247: (nil)
+            ...
+    
+    The existing options of "tree" command can work as well:
+    
+        crash> tree -t maple -r mm_struct.mm_mt 0xffff9034c006aec0 -p
+        ffff9035131754c0
+          index: 1  position: root/0/1
+        ffff9035131751c8
+          index: 2  position: root/0/3
+        ffff9035131757b8
+          index: 3  position: root/0/4
+        ...
+    
+        crash> tree -t maple 0xffff9034c006aec0 -p -x -s vm_area_struct.vm_start,vm_end
+        ffff9035131754c0
+          index: 1  position: root/0/1
+          vm_start = 0x5613d3c00000,
+          vm_end = 0x5613d3d08000,
+        ffff9035131751c8
+          index: 2  position: root/0/3
+          vm_start = 0x5613d3f07000,
+          vm_end = 0x5613d3f0b000,
+        ffff9035131757b8
+          index: 3  position: root/0/4
+          vm_start = 0x5613d3f0b000,
+          vm_end = 0x5613d3f14000,
+        ....
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 872cad2d63b3a07f65323fe80a7abb29ea276b44
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Jan 10 14:56:27 2023 +0800
+
+    Port the maple tree data structures and functions
+    
+    There have been two ways to iterate vm_area_struct until Linux 6.0:
+     1) by rbtree, aka vma.vm_rb;
+     2) by linked list, aka vma.vm_{next,prev}.
+    However with the maple tree patches[1][2] in Linux 6.1, vm_rb and
+    vm_{next,prev} are removed from vm_area_struct. The vm_area_dump()
+    in crash mainly uses the linked list for vma iteration, which will
+    not work for this case. So the maple tree iteration needs to be
+    ported to crash.
+    
+    For crash, currently it only iteratively reads the maple tree,
+    no more rcu safe or maple tree modification features needed.
+    So we only port a subset of kernel maple tree features.
+    In addition, we need to modify the ported kernel source code,
+    making it compatible with crash.
+    
+    This patch deals with the two issues:
+     1) Poring mt_dump() function and all its dependencies from
+        kernel source to crash, to enable crash maple tree iteration,
+     2) adapting the ported code with crash.
+    
+    [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=524e00b36e8c547f5582eef3fb645a8d9fc5e3df
+    [2]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=763ecb035029f500d7e6dc99acd1ad299b7726a1
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit ac96e17d1de51016ee1a983e68c7e840ff55ab8d
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu Jan 5 17:36:42 2023 +0900
+
+    SLAB: Fix for "kmem -s|-S" options on Linux 6.2-rc1 and later
+    
+    Kernel commit 130d4df57390 ("mm/sl[au]b: rearrange struct slab fields to
+    allow larger rcu_head"), which is contained in Linux 6.2-rc1 and later
+    kernels, changed the offset of slab.slab_list and now it's not equal to
+    the offset of page.lru.
+    
+    Without the patch, "kmem -s|-S" options print errors and zeros for slab
+    counters like this for kernels configured with CONFIG_SLAB=y.
+    
+      crash> kmem -s
+      CACHE             OBJSIZE  ALLOCATED     TOTAL  SLABS  SSIZE  NAME
+      kmem: rpc_inode_cache: partial list: page/slab: fffff31ac4125190  bad active counter: 99476865
+      kmem: rpc_inode_cache: partial list: page/slab: fffff31ac4125190  bad s_mem pointer: 100000003
+      kmem: rpc_inode_cache: full list: page/slab: fffff31ac4125150  bad active counter: 99476225
+      kmem: rpc_inode_cache: full list: page/slab: fffff31ac4125150  bad active counter: 99476225
+      kmem: rpc_inode_cache: full list: page/slab: fffff31ac4125150  bad s_mem pointer: 100000005
+      ffff930202adfb40      704          0         0      0     4k rpc_inode_cache
+      ...
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 120d6e89fc14eb7f1c9a3106305c7066730f36b8
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu Jan 5 17:18:51 2023 +0900
+
+    SLAB: Fix for "kmem -s|-S" options on Linux 6.1 and later
+    
+    Kernel commit e36ce448a08d ("mm/slab: use kmalloc_node() for off slab
+    freelist_idx_t array allocation"), which is contained in Linux 6.1 and
+    later kernels, removed kmem_cache.freelist_cache member on kernels
+    configured with CONFIG_SLAB=y.
+    
+    Without the patch, crash does not set SLAB_OVERLOAD_PAGE and
+    "kmem -s|-S" options fail with the following error:
+    
+      kmem: invalid structure member offset: slab_list
+            FILE: memory.c  LINE: 12156  FUNCTION: verify_slab_v2()
+    
+    Use kmem_cache.freelist_size instead, which was introduced together
+    with kmem_cache.freelist_cache by kernel commit 8456a648cf44.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit a053a1442dff4eecd17aee089502feac922a7af7
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Dec 26 21:03:17 2022 +0800
+
+    gdb: Fix an assertion failure in the gdb's copy_type()
+    
+    This is a backported patch from gdb. Without the patch, the following
+    crash command may abort due to an assertion failure in the gdb's
+    copy_type():
+    
+      crash> px __per_cpu_start:0
+      gdbtypes.c:5505: internal-error: type* copy_type(const type*): Assertion `TYPE_OBJFILE_OWNED (type)' failed.
+      A problem internal to GDB has been detected,
+      further debugging may prove unreliable.
+      Quit this debugging session? (y or n)
+    
+    The gdb commit 8e2da1651879 ("Fix assertion failure in copy_type")
+    solved the current issue.
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 4cf7c714e3cc97e6d41a9b1fdd48f5199f632a4d
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Tue Dec 27 09:53:46 2022 +0900
+
+    Fix build failure due to no EM_RISCV with glibc-2.23 and earlier
+    
+    With glibc-2.23 and earlier (e.g. RHEL7), crash build fails with errors
+    like this due to EM_RISCV undeclared:
+    
+      $ make -j 24 warn
+      TARGET: X86_64
+      CRASH: 8.0.2++
+      GDB: 10.2
+      ...
+      symbols.c: In function 'is_kernel':
+      symbols.c:3746:8: error: 'EM_RISCV' undeclared (first use in this function)
+         case EM_RISCV:
+              ^
+      ...
+    
+    Define EM_RISCV as 243 [1][2] if not defined.
+    
+    [1] https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=94e73c95d9b5
+    [2] http://www.sco.com/developers/gabi/latest/ch4.eheader.html
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 41d4b85ea50efc733df65ec8421a74be10e47987
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Dec 23 18:42:35 2022 +0800
+
+    Fix for "kmem -i" to display correct SLAB statistics on Linux 5.9 and later
+    
+    Kernel commit d42f3245c7e2 ("mm: memcg: convert vmstat slab counters to
+    bytes"), which is contained in Linux v5.9-rc1 and later kernels, renamed
+    NR_SLAB_{RECLAIMABLE,UNRECLAIMABLE} to NR_SLAB_{RECLAIMABLE,UNRECLAIMABLE}_B.
+    
+    Without the patch, "kmem -i" command will display incorrect SLAB
+    statistics:
+    
+      crash> kmem -i | grep -e PAGES -e SLAB
+                       PAGES        TOTAL      PERCENTAGE
+               SLAB    89458     349.4 MB    0% of TOTAL MEM
+                       ^^^^^     ^^^^^
+    
+    With the patch, the actual result is:
+      crash> kmem -i | grep -e PAGES -e SLAB
+                       PAGES        TOTAL      PERCENTAGE
+               SLAB   261953    1023.3 MB    0% of TOTAL MEM
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit d83df2fb66cd77877d365fda32cd45c531796599
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Fri Dec 16 14:03:46 2022 +0900
+
+    SLUB: Fix for offset change of struct slab members on Linux 6.2-rc1
+    
+    The following kernel commits split slab info from struct page into
+    struct slab in Linux 5.17.
+    
+      d122019bf061 ("mm: Split slab into its own type")
+      07f910f9b729 ("mm: Remove slab from struct page")
+    
+    Crash commit 5f390ed811b0 followed the change for SLUB, but crash still
+    uses the offset of page.lru inappropriately.  Luckily, it could work
+    because it was the same value as the offset of slab.slab_list until
+    Linux 6.1.
+    
+    However, kernel commit 130d4df57390 ("mm/sl[au]b: rearrange struct slab
+    fields to allow larger rcu_head") in Linux 6.2-rc1 changed the offset of
+    slab.slab_list.  As a result, without the patch, "kmem -s|-S" options
+    print the following errors and fail to print values correctly for
+    kernels configured with CONFIG_SLUB.
+    
+      crash> kmem -S filp
+      CACHE             OBJSIZE  ALLOCATED     TOTAL  SLABS  SSIZE  NAME
+      kmem: filp: partial list slab: ffffcc650405ab88 invalid page.inuse: -1
+      ffff8fa0401eca00      232       1267      1792     56     8k  filp
+      ...
+      KMEM_CACHE_NODE   NODE  SLABS  PARTIAL  PER-CPU
+      ffff8fa0401cb8c0     0     56       24        8
+      NODE 0 PARTIAL:
+        SLAB              MEMORY            NODE  TOTAL  ALLOCATED  FREE
+      kmem: filp: invalid partial list slab pointer: ffffcc650405ab88
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 0d5ad129252a18a46d1818a68ed22b35c5234289
+Author: Xianting Tian <xianting.tian@linux.alibaba.com>
+Date:   Thu Oct 20 09:50:14 2022 +0800
+
+    RISCV64: Add the implementation of symbol verify
+    
+    Verify the symbol to accept or reject a symbol from the kernel namelist.
+    
+    Signed-off-by: Xianting Tian <xianting.tian@linux.alibaba.com>
+
+commit 3f4714967961c2ca8b70dccb938a5258b6572d2b
+Author: Xianting Tian <xianting.tian@linux.alibaba.com>
+Date:   Thu Oct 20 09:50:13 2022 +0800
+
+    RISCV64: Add 'mach' command support
+    
+    With the patch we can get some basic machine state information,
+    crash> mach
+                    MACHINE TYPE: riscv64
+                     MEMORY SIZE: 1 GB
+                            CPUS: 1
+                 PROCESSOR SPEED: (unknown)
+                              HZ: 250
+                       PAGE SIZE: 4096
+               KERNEL STACK SIZE: 16384
+    
+    Signed-off-by: Xianting Tian <xianting.tian@linux.alibaba.com>
+
+commit 6c281cd355c904ddb82cbb49278b925d2ed13365
+Author: Xianting Tian <xianting.tian@linux.alibaba.com>
+Date:   Thu Oct 20 09:50:12 2022 +0800
+
+    RISCV64: Add 'help -m/M' command support
+    
+    Add riscv64_dump_machdep_table() implementation, display machdep_table.
+    
+    crash> help -m
+                  flags: 80 ()
+                 kvbase: ff60000000000000
+      identity_map_base: ff60000000000000
+               pagesize: 4096
+              pageshift: 12
+               pagemask: fffffffffffff000
+             pageoffset: fff
+            pgdir_shift: 48
+           ptrs_per_pgd: 512
+           ptrs_per_pte: 512
+              stacksize: 16384
+                     hz: 250
+                memsize: 1071644672 (0x3fe00000)
+                   bits: 64
+             back_trace: riscv64_back_trace_cmd()
+        processor_speed: riscv64_processor_speed()
+                  uvtop: riscv64_uvtop()
+                  kvtop: riscv64_kvtop()
+        get_stack_frame: riscv64_get_stack_frame()
+          get_stackbase: generic_get_stackbase()
+           get_stacktop: generic_get_stacktop()
+          translate_pte: riscv64_translate_pte()
+            memory_size: generic_memory_size()
+          vmalloc_start: riscv64_vmalloc_start()
+           is_task_addr: riscv64_is_task_addr()
+          verify_symbol: riscv64_verify_symbol()
+             dis_filter: generic_dis_filter()
+               dump_irq: generic_dump_irq()
+        show_interrupts: generic_show_interrupts()
+       get_irq_affinity: generic_get_irq_affinity()
+               cmd_mach: riscv64_cmd_mach()
+           get_smp_cpus: riscv64_get_smp_cpus()
+              is_kvaddr: riscv64_is_kvaddr()
+              is_uvaddr: riscv64_is_uvaddr()
+           verify_paddr: generic_verify_paddr()
+        init_kernel_pgd: NULL
+        value_to_symbol: generic_machdep_value_to_symbol()
+      line_number_hooks: NULL
+          last_pgd_read: ffffffff810e9000
+          last_p4d_read: 81410000
+          last_pud_read: 81411000
+          last_pmd_read: 81412000
+         last_ptbl_read: 81415000
+                    pgd: 560d586f3ab0
+                    p4d: 560d586f4ac0
+                    pud: 560d586f5ad0
+                    pmd: 560d586f6ae0
+                   ptbl: 560d586f7af0
+      section_size_bits: 27
+       max_physmem_bits: 56
+      sections_per_root: 0
+               machspec: 560d57d204a0
+    
+    Signed-off-by: Xianting Tian <xianting.tian@linux.alibaba.com>
+
+commit 5cfcdb4ebcb159c1c47b7c1805cd9b274ca27ff5
+Author: Xianting Tian <xianting.tian@linux.alibaba.com>
+Date:   Thu Oct 20 09:50:11 2022 +0800
+
+    RISCV64: Add 'help -r' command support
+    
+    Add support form printing out the registers from the dump file.
+    
+    With the patch, we can get the regs,
+    crash> help -r
+    CPU 0:
+    epc : 00ffffffa5537400 ra : ffffffff80088620 sp : ff2000001039bb90
+     gp : ffffffff810dde38 tp : ff60000002269600 t0 : ffffffff8032be5c
+     t1 : 0720072007200720 t2 : 666666666666663c s0 : ff2000001039bcf0
+     s1 : 0000000000000000 a0 : ff2000001039bb98 a1 : 0000000000000001
+     a2 : 0000000000000010 a3 : 0000000000000000 a4 : 0000000000000000
+     a5 : ff60000001c7d000 a6 : 000000000000003c a7 : ffffffff8035c998
+     s2 : ffffffff810df0a8 s3 : ffffffff810df718 s4 : ff2000001039bb98
+     s5 : 0000000000000000 s6 : 0000000000000007 s7 : ffffffff80c4a468
+     s8 : 00fffffffde45410 s9 : 0000000000000007 s10: 00aaaaaad1640700
+     s11: 0000000000000001 t3 : ff60000001218f00 t4 : ff60000001218f00
+     t5 : ff60000001218000 t6 : ff2000001039b988
+    
+    Signed-off-by: Xianting Tian <xianting.tian@linux.alibaba.com>
+
+commit 0d9fcbe3803c684fbfee893837a94d3c8f377805
+Author: Xianting Tian <xianting.tian@linux.alibaba.com>
+Date:   Thu Oct 20 09:50:10 2022 +0800
+
+    RISCV64: Add 'bt' command support
+    
+    1, Add the implementation to get stack frame from active & inactive
+       task's stack.
+    2, Add 'bt -l' command support get a line number associated with a
+       current pc address.
+    3, Add 'bt -f' command support to display all stack data contained
+       in a frame
+    
+    With the patch, we can get the backtrace,
+    crash> bt
+    PID: 113      TASK: ff6000000226c200  CPU: 0    COMMAND: "sh"
+     #0 [ff20000010333b90] riscv_crash_save_regs at ffffffff800078f8
+     #1 [ff20000010333cf0] panic at ffffffff806578c6
+     #2 [ff20000010333d50] sysrq_reset_seq_param_set at ffffffff8038c03c
+     #3 [ff20000010333da0] __handle_sysrq at ffffffff8038c604
+     #4 [ff20000010333e00] write_sysrq_trigger at ffffffff8038cae4
+     #5 [ff20000010333e20] proc_reg_write at ffffffff801b7ee8
+     #6 [ff20000010333e40] vfs_write at ffffffff80152bb2
+     #7 [ff20000010333e80] ksys_write at ffffffff80152eda
+     #8 [ff20000010333ed0] sys_write at ffffffff80152f52
+    
+    crash> bt -l
+    PID: 113      TASK: ff6000000226c200  CPU: 0    COMMAND: "sh"
+     #0 [ff20000010333b90] riscv_crash_save_regs at ffffffff800078f8
+        /buildroot/qemu_riscv64_virt_defconfig/build/linux-custom/arch/riscv/kernel/crash_save_regs.S: 47
+     #1 [ff20000010333cf0] panic at ffffffff806578c6
+        /buildroot/qemu_riscv64_virt_defconfig/build/linux-custom/kernel/panic.c: 276
+     ... ...
+    
+    crash> bt -f
+    PID: 113      TASK: ff6000000226c200  CPU: 0    COMMAND: "sh"
+     #0 [ff20000010333b90] riscv_crash_save_regs at ffffffff800078f8
+        [PC: ffffffff800078f8 RA: ffffffff806578c6 SP: ff20000010333b90 SIZE: 352]
+        ff20000010333b90: ff20000010333bb0 ffffffff800078f8
+        ff20000010333ba0: ffffffff8008862c ff20000010333b90
+        ff20000010333bb0: ffffffff810dde38 ff6000000226c200
+        ff20000010333bc0: ffffffff8032be68 0720072007200720
+     ... ...
+    
+    Signed-off-by: Xianting Tian <xianting.tian@linux.alibaba.com>
+
+commit 67216c741c4ebe8494f74f1ceabff9cdafb67883
+Author: Xianting Tian <xianting.tian@linux.alibaba.com>
+Date:   Thu Oct 20 09:50:09 2022 +0800
+
+    RISCV64: Add irq command support
+    
+    With the patch, we can get the irq info,
+    crash> irq
+     IRQ   IRQ_DESC/_DATA      IRQACTION      NAME
+     0       (unused)          (unused)
+     1   ff60000001329600  ff60000001d17180  "101000.rtc"
+     2   ff60000001329800  ff60000001d17680  "ttyS0"
+     3   ff60000001329a00  ff60000001c33c00  "virtio0"
+     4   ff60000001329c00  ff60000001c33f80  "virtio1"
+     5   ff6000000120f400  ff60000001216000  "riscv-timer"
+    
+    Signed-off-by: Xianting Tian <xianting.tian@linux.alibaba.com>
+
+commit b410e14f7865e8c0e28cf2fb7a0092e3a8735645
+Author: Xianting Tian <xianting.tian@linux.alibaba.com>
+Date:   Thu Oct 20 09:50:08 2022 +0800
+
+    RISCV64: Add 'dis' command support
+    
+    Use generic_dis_filter() function to support dis command implementation.
+    
+    With this patch, we can get the disassembled code,
+    crash> dis __crash_kexec
+    0xffffffff80088580 <__crash_kexec>:     addi    sp,sp,-352
+    0xffffffff80088582 <__crash_kexec+2>:   sd      s0,336(sp)
+    0xffffffff80088584 <__crash_kexec+4>:   sd      s1,328(sp)
+    0xffffffff80088586 <__crash_kexec+6>:   sd      s2,320(sp)
+    0xffffffff80088588 <__crash_kexec+8>:   addi    s0,sp,352
+    0xffffffff8008858a <__crash_kexec+10>:  sd      ra,344(sp)
+    0xffffffff8008858c <__crash_kexec+12>:  sd      s3,312(sp)
+    0xffffffff8008858e <__crash_kexec+14>:  sd      s4,304(sp)
+    0xffffffff80088590 <__crash_kexec+16>:  auipc   s2,0x1057
+    0xffffffff80088594 <__crash_kexec+20>:  addi    s2,s2,-1256
+    0xffffffff80088598 <__crash_kexec+24>:  ld      a5,0(s2)
+    0xffffffff8008859c <__crash_kexec+28>:  mv      s1,a0
+    0xffffffff8008859e <__crash_kexec+30>:  auipc   a0,0xfff
+    
+    Signed-off-by: Xianting Tian <xianting.tian@linux.alibaba.com>
+
+commit e7119d2225e1db3c460285880ea39b69d362178e
+Author: Xianting Tian <xianting.tian@linux.alibaba.com>
+Date:   Thu Oct 20 09:50:07 2022 +0800
+
+    RISCV64: Make crash tool enter command line and support some commands
+    
+    1. Add riscv64_init() implementation, do all necessary machine-specific setup,
+       which will be called multiple times during initialization.
+    2. Add riscv64 sv39/48/57 pagetable macro definitions, the function of converting
+       virtual address to a physical address via 4K page table.
+       For 2M and 1G pagesize, they will be implemented in the future(currently not supported).
+    3. Add the implementation of the vtop command, which is used to convert a
+       virtual address to a physical address(call the functions defined in 2).
+    4. Add the implementation to get virtual memory layout, va_bits, phys_ram_base
+       from vmcoreinfo. As these configurations changes from time to time, we sent
+       a Linux kernel patch to export these configurations, which can simplify the
+       development of crash tool.
+       The kernel commit: 649d6b1019a2 ("RISC-V: Add arch_crash_save_vmcoreinfo")
+    5. Add riscv64_get_smp_cpus() implementation, get the number of cpus.
+    6. Add riscv64_get_page_size() implementation, get page size.
+    And so on.
+    
+    With this patch, we can enter crash command line, and run "vtop", "mod", "rd",
+    "*", "p", "kmem" ...
+    
+    Tested on QEMU RISCV64 end and SoC platform of T-head Xuantie 910 CPU.
+    
+          KERNEL: vmlinux
+        DUMPFILE: vmcore
+            CPUS: 1
+            DATE: Fri Jul 15 10:24:25 CST 2022
+          UPTIME: 00:00:33
+    LOAD AVERAGE: 0.05, 0.01, 0.00
+           TASKS: 41
+        NODENAME: buildroot
+         RELEASE: 5.18.9
+         VERSION: #30 SMP Fri Jul 15 09:47:03 CST 2022
+         MACHINE: riscv64  (unknown Mhz)
+          MEMORY: 1 GB
+           PANIC: "Kernel panic - not syncing: sysrq triggered crash"
+             PID: 113
+         COMMAND: "sh"
+            TASK: ff60000002269600  [THREAD_INFO: ff60000002269600]
+             CPU: 0
+           STATE: TASK_RUNNING (PANIC)
+    
+    crash> p mem_map
+    mem_map = $1 = (struct page *) 0xff6000003effbf00
+    
+    crash> p /x *(struct page *) 0xff6000003effbf00
+    $5 = {
+      flags = 0x1000,
+      {
+        {
+          {
+            lru = {
+              next = 0xff6000003effbf08,
+              prev = 0xff6000003effbf08
+            },
+            {
+              __filler = 0xff6000003effbf08,
+              mlock_count = 0x3effbf08
+            }
+          },
+          mapping = 0x0,
+          index = 0x0,
+          private = 0x0
+        },
+    
+    crash> mod
+         MODULE       NAME             BASE         SIZE  OBJECT FILE
+    ffffffff0113e740  nvme_core  ffffffff01133000  98304  (not loaded)  [CONFIG_KALLSYMS]
+    ffffffff011542c0  nvme       ffffffff0114c000  61440  (not loaded)  [CONFIG_KALLSYMS]
+    
+    crash> rd ffffffff0113e740 8
+    ffffffff0113e740:  0000000000000000 ffffffff810874f8   .........t......
+    ffffffff0113e750:  ffffffff011542c8 726f635f656d766e   .B......nvme_cor
+    ffffffff0113e760:  0000000000000065 0000000000000000   e...............
+    ffffffff0113e770:  0000000000000000 0000000000000000   ................
+    
+    crash> vtop ffffffff0113e740
+    VIRTUAL           PHYSICAL
+    ffffffff0113e740  8254d740
+    
+      PGD: ffffffff810e9ff8 => 2ffff001
+      P4D: 0000000000000000 => 000000002fffec01
+      PUD: 00005605c2957470 => 0000000020949801
+      PMD: 00007fff7f1750c0 => 0000000020947401
+      PTE: 0 => 209534e7
+     PAGE: 000000008254d000
+    
+      PTE     PHYSICAL  FLAGS
+    209534e7  8254d000  (PRESENT|READ|WRITE|GLOBAL|ACCESSED|DIRTY)
+    
+          PAGE       PHYSICAL      MAPPING       INDEX CNT FLAGS
+    ff6000003f0777d8 8254d000                0        0  1 0
+    
+    Tested-by: Yixun Lan <yixun.lan@gmail.com>
+    Signed-off-by: Xianting Tian <xianting.tian@linux.alibaba.com>
+
+commit 12c31560000adaaf3539f2bcdffff51ec05df447
+Author: Xianting Tian <xianting.tian@linux.alibaba.com>
+Date:   Thu Oct 20 09:50:06 2022 +0800
+
+    Add RISCV64 framework code support
+    
+    This patch mainly added some environment configurations, macro definitions,
+    specific architecture structures and some function declarations supported
+    by the RISCV64 architecture.
+    
+    We can use the build command to get the simplest version crash tool:
+            make target=RISCV64 -j2
+    
+    Co-developed-by: Lifang Xia <lifang_xia@linux.alibaba.com>
+    Signed-off-by: Xianting Tian <xianting.tian@linux.alibaba.com>
+
+commit 88a4910d95d43a01151ad1d570035b96893bc7f1
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Dec 21 17:09:08 2022 +0800
+
+    Fix "mount" command to appropriately display the mount dumps
+    
+    Recently the following failure has been observed on some vmcores when
+    using the mount command:
+    
+      crash> mount
+           MOUNT           SUPERBLK     TYPE   DEVNAME   DIRNAME
+      ffff97a4818a3480 ffff979500013800 rootfs none      /
+      ffff97e4846ca700 ffff97e484653000 sysfs  sysfs     /sys
+      ...
+      ffff97b484753420                0 mount: invalid kernel virtual address: 0  type: "super_block buffer"
+    
+    The kernel virtual address of the super_block is zero when the mount
+    command fails with the vfsmnt address 0xffff97b484753420. And the
+    remaining mount information will be discarded. That is not expected.
+    
+    Check the address and skip it with a warning, if this is an invalid
+    kernel virtual address, that can avoid truncating the remaining mount
+    dumps.
+    
+    Reported-by: Dave Wysochanski <dwysocha@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit f182d08bab202dddf20b742fef6cc2bda0a56d6c
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu Dec 15 11:31:38 2022 +0900
+
+    Fix for mm_struct.rss_stat conversion into percpu_counter
+    
+    Kernel commit f1a7941243c1 ("mm: convert mm's rss stats into
+    percpu_counter"), which is contained in Linux 6.2-rc1 and later
+    kernels, changed mm_struct.rss_stat from struct mm_rss_stat into an
+    array of struct percpu_counter.
+    
+    Without the patch, "ps" and several commands fail with the following
+    error message:
+    
+      ps: invalid structure member offset: mm_rss_stat_count
+          FILE: memory.c  LINE: 4724  FUNCTION: get_task_mem_usage()
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit df1f0cba729fa0e0d8a63220769c42cc9033acc1
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Wed Dec 7 09:46:56 2022 +0900
+
+    x86_64: Fix for move of per-cpu variables into struct pcpu_hot
+    
+    The following kernel commits, which are contained in Linux 6.2-rc1 and
+    later kernels, introduced struct pcpu_hot and moved several per-cpu
+    variables into it.
+    
+      d7b6d709a76a x86/percpu: Move irq_stack variables next to current_task
+      7443b296e699 x86/percpu: Move cpu_number next to current_task
+      e57ef2ed97c1 x86: Put hot per CPU variables into a struct
+    
+    Without the patch, crash fails to start session with the following
+    error:
+    
+      $ crash vmlinux vmcore
+      ...
+      bt: invalid size request: 0  type: "stack contents"
+      bt: read of stack at 0 failed
+         <segmentation violation in gdb>
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 2f1085df4dc9c197be9a7a6828a381785058c7b7
+Author: Luc Chouinard <lucchouina@gmail.com>
+Date:   Fri Dec 9 11:19:17 2022 -0800
+
+    EPPIC extension support for crash-8.x + gdb-10.x
+    
+    The previous version of the interface between eppic and crash/gdb was
+    messy and not portable. This new version uses a clean interface with
+    execution through the standard gnu_request and gdb command funnel.
+    
+    Signed-off-by: Luc Chouinard <lucchouina@gmail.com>
+
+commit 141e75f3c11cc9342f11418e0bec86877424bef8
+Author: Pavankumar Kondeti <quic_pkondeti@quicinc.com>
+Date:   Thu Dec 8 09:55:07 2022 +0530
+
+    arm64: handle vabits_actual symbol missing case
+    
+    After kernel commit 0d9b1ffefabe ("arm64: mm: make vabits_actual
+    a build time constant if possible") introduced in Linux v5.19,
+    the crash will not find vabits_actual symbol if VA_BITS <= 48.
+    Add a fallback option to initialize VA_BITS based on the user
+    supplied machdep option.
+    
+    Tested ramdumps loading in both 6.0 and 5.15 kernels.
+    
+    Signed-off-by: Pavankumar Kondeti <quic_pkondeti@quicinc.com>
+
+commit 5f27639196c3240810fbf30d367da0063a6612ff
+Author: Ding Hui <dinghui@sangfor.com.cn>
+Date:   Thu Dec 1 15:01:45 2022 +0800
+
+    arm64: fix backtraces of KASAN kernel dumpfile truncated
+    
+    We met "bt" command on KASAN kernel vmcore display truncated backtraces
+    like this:
+    
+      crash> bt
+      PID: 4131   TASK: ffff8001521df000  CPU: 3   COMMAND: "bash"
+       #0 [ffff2000224b0cb0] machine_kexec_prepare at ffff2000200bff4c
+    
+    After digging the root cause, it turns out that arm64_in_kdump_text()
+    found wrong bt->bptr at "machine_kexec" branch.
+    
+    Disassemble machine_kexec() of KASAN vmlinux (gcc 7.3.0):
+    
+      crash> dis -x machine_kexec
+      0xffff2000200bff50 <machine_kexec>:     stp     x29, x30, [sp,#-208]!
+      0xffff2000200bff54 <machine_kexec+0x4>: mov     x29, sp
+      0xffff2000200bff58 <machine_kexec+0x8>: stp     x19, x20, [sp,#16]
+      0xffff2000200bff5c <machine_kexec+0xc>: str     x24, [sp,#56]
+      0xffff2000200bff60 <machine_kexec+0x10>:        str     x26, [sp,#72]
+      0xffff2000200bff64 <machine_kexec+0x14>:        mov     x2, #0x8ab3
+      0xffff2000200bff68 <machine_kexec+0x18>:        add     x1, x29, #0x70
+      0xffff2000200bff6c <machine_kexec+0x1c>:        lsr     x1, x1, #3
+      0xffff2000200bff70 <machine_kexec+0x20>:        movk    x2, #0x41b5, lsl #16
+      0xffff2000200bff74 <machine_kexec+0x24>:        mov     x19, #0x200000000000
+      0xffff2000200bff78 <machine_kexec+0x28>:        adrp    x3, 0xffff2000224b0000
+      0xffff2000200bff7c <machine_kexec+0x2c>:        movk    x19, #0xdfff, lsl #48
+      0xffff2000200bff80 <machine_kexec+0x30>:        add     x3, x3, #0xcb0
+      0xffff2000200bff84 <machine_kexec+0x34>:        add     x4, x1, x19
+      0xffff2000200bff88 <machine_kexec+0x38>:        stp     x2, x3, [x29,#112]
+      0xffff2000200bff8c <machine_kexec+0x3c>:        adrp    x2, 0xffff2000200bf000 <swsusp_arch_resume+0x1e8>
+      0xffff2000200bff90 <machine_kexec+0x40>:        add     x2, x2, #0xf50
+      0xffff2000200bff94 <machine_kexec+0x44>:        str     x2, [x29,#128]
+      0xffff2000200bff98 <machine_kexec+0x48>:        mov     w2, #0xf1f1f1f1
+      0xffff2000200bff9c <machine_kexec+0x4c>:        str     w2, [x1,x19]
+      0xffff2000200bffa0 <machine_kexec+0x50>:        mov     w2, #0xf200
+      0xffff2000200bffa4 <machine_kexec+0x54>:        mov     w1, #0xf3f3f3f3
+      0xffff2000200bffa8 <machine_kexec+0x58>:        movk    w2, #0xf2f2, lsl #16
+      0xffff2000200bffac <machine_kexec+0x5c>:        stp     w2, w1, [x4,#4]
+    
+    We notice that:
+    1. machine_kexec() start address is 0xffff2000200bff50
+    2. the instruction at machine_kexec+0x44 stores the same value
+       0xffff2000200bff50 (comes from 0xffff2000200bf000 + 0xf50)
+       into stack postion [x29,#128].
+    
+    When arm64_in_kdump_text() searches for LR from stack, it met
+    0xffff2000200bff50 firstly, so got wrong bt->bptr.
+    
+    We know that the real LR is always greater than the start address
+    of a function, so let's fix it by changing the search conditon to
+    (*ptr > xxx_start) && (*ptr < xxx_end).
+    
+    Signed-off-by: Ding Hui <dinghui@sangfor.com.cn>
+
+commit 9f1256958d2b18953b4c8b244d88c023048a964f
+Author: Aaron Tomlin <atomlin@redhat.com>
+Date:   Tue Nov 29 14:05:26 2022 +0000
+
+    ps: Provide an option to display no header line
+    
+    One might often find it useful to redirect/or filter the output
+    generated by the 'ps' command. This simple patch provides an option
+    (i.e. '-H') to display no header line so it does not need to be
+    considered e.g.
+    
+    crash> ps -u -H | head -5
+            1       0   1  ffff956e8028d280  IN   0.0   174276     9272  systemd
+         1067       1   2  ffff956e81380000  IN   0.1    59480    15788  systemd-journal
+         1080       1   0  ffff956e8d152940  IN   0.0    36196     3548  systemd-udevd
+         1278       1   6  ffff956e8aa60000  IN   0.0    17664     3072  systemd-oomd
+         1366       1   7  ffff956e88548000  IN   0.0    10868     2328  dbus-broker-lau
+    
+    Signed-off-by: Aaron Tomlin <atomlin@atomlin.com>
+
+commit 1e35ad44dc5581af9bdde304baf0cf5a139b71be
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Mon Dec 5 10:31:47 2022 +0900
+
+    Mark start of 8.0.3 development phase with version 8.0.2++
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
