@@ -33,7 +33,7 @@ NAME
   ps - display process status information
 
 SYNOPSIS
-  ps [-k|-u|-G|-y policy] [-s] [-p|-c|-t|-[l|m][-C cpu]|-a|-g|-r|-S|-A]
+  ps [-k|-u|-G|-y policy] [-s] [-p|-c|-t|-[l|m][-C cpu]|-a|-g|-r|-S|-A|-H]
      [pid | task | command] ...
 
 DESCRIPTION
@@ -117,6 +117,7 @@ DESCRIPTION
        -r  display resource limits (rlimits) of selected, or all, tasks.
        -S  display a summary consisting of the number of tasks in a task state.
        -A  display only the active task on each cpu.
+       -H  display no header line.
 
 EXAMPLES
   Show the process status of all current tasks:
