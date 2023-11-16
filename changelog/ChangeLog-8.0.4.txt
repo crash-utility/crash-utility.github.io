@@ -1,0 +1,1227 @@
+commit a6832f608cb5d473739cf33bbf84ab1df8d98fd5
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu Nov 16 11:20:42 2023 +0900
+
+    crash-8.0.3 -> crash-8.0.4
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 262b1c71b485632ee3b56f5742ee915a17e70c41
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Nov 13 19:09:08 2023 +0800
+
+    Fix printing incorrect panic string issue
+    
+    Since the panic_on_oops is disabled, when getting a BUG hit in the code,
+    the system continues and does not panic. However, a short time later, a
+    hard lockup is hit and the system does panic. Even though the system
+    panicked at hard lockup, the panic string is still the first BUG hit.
+    For example:
+    
+    Without the patch:
+      crash> sys | grep PANIC
+             PANIC: "BUG: unable to handle kernel paging request at ffffab835d7f9d50"
+    
+    With the patch:
+      crash> sys | grep PANIC
+             PANIC: "Kernel panic - not syncing: Hard LOCKUP"
+    
+    Let's search for the panic string based on the severity of the panic
+    event, and also refactor the get_panicmsg() a little bit to improve
+    readability.
+    
+    Reported-by: John Pittman <jpittman@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 55a43bcefa20161c7e56ed0e309e90e941f47efc
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu Oct 26 12:02:35 2023 +0900
+
+    Fix compilation error and warning with gcc-4.8.5
+    
+    Fix the following compilation error in diskdump.c and warning in
+    xen_hyper.c with gcc-4.8.5 (e.g. RHEL7).
+    
+    - diskdump.c: In function 'try_zram_decompress':
+      diskdump.c:3048:3: error: 'for' loop initial declarations are only allowed in C99 mode
+         for (int count = 0; count < PAGESIZE() / sizeof(ulong); count++) {
+         ^
+      diskdump.c:3048:3: note: use option -std=c99 or -std=gnu99 to compile your code
+      make[4]: *** [diskdump.o] Error 1
+      make[3]: *** [gdb] Error 2
+      make[2]: *** [rebuild] Error 2
+      make[1]: *** [gdb_merge] Error 2
+      make: *** [all] Error 2
+    
+    - xen_hyper.c: In function 'xen_hyper_x86_pcpu_init':
+      xen_hyper.c:387:36: warning: 'init_tss' may be used uninitialized in this function [-Wmaybe-uninitialized]
+          xen_hyper_store_pcpu_context_tss(pcc, init_tss, buf);
+                                          ^
+    
+    Fixes: 0172e35083b5 ("Fix "rd" command to display data on zram on Linux 5.17 and later")
+    Fixes: 9ee564cd1a46 ("xen: get stack address via stack_base array if available")
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit fc6ed525407ffc6a181ab9b902f2fb23936309d2
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Oct 24 17:10:53 2023 +0800
+
+    gdb: Verify COFF symbol stringtab offset
+    
+    This is a backport patch from gdb commit 58abdf887821 ("Verify COFF
+    symbol stringtab offset").
+    
+    The AddressSanitizer reports a heap-use-after-free error as below:
+      gdb/coff-pe-read.c:137:27
+    
+    Add a COFF offset check to fix this issue.
+    
+    Link: https://sourceware.org/bugzilla/show_bug.cgi?id=30640
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit a8e5e4cbae5464d7bb7db48e4e21178fc55572fc
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Oct 23 16:44:34 2023 +0800
+
+    gdb: Avoid buffer overflow in ada_decode
+    
+    This is a partial backport patch from gdb commit 033bc52bb619 ("Avoid
+    buffer overflow in ada_decode").
+    
+    The AddressSanitizer reports a dynamic-stack-buffer-overflow error as
+    below:
+      gdb/ada-lang.c:1388:16 in ada_decode[abi:cxx11](char const*, bool, bool)
+    
+    Add a missing bounds check to fix the issue.
+    
+    Link: https://sourceware.org/bugzilla/show_bug.cgi?id=30639
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 0172e35083b545fa7dd640fa5de0111f8474fc14
+Author: chenguanyou <chenguanyou@xiaomi.com>
+Date:   Mon Sep 11 20:59:39 2023 +0800
+
+    Fix "rd" command to display data on zram on Linux 5.17 and later
+    
+    Fix "rd" command to display data on zram on Linux 5.17 and later kernels
+    that contain commits
+      a41ec880aa7b ("zsmalloc: move huge compressed obj from page to zspage"),
+      ffedd09fa9b0 ("zsmalloc: Stop using slab fields in struct page"),
+    and on Linux 6.1 and later that contain commit
+      f635725c3905 ("zram: do not waste zram_table_entry flags bits").
+    
+    Also, fix a bug that sets the same "byte" by memset() instead to pages
+    containing the same "unsigned long" elements.
+    
+    Before:
+      crash> mod -s zram zram.ko
+           MODULE       NAME                                          BASE           SIZE  OBJECT FILE
+      ffffffde224db800  zram                                    ffffffde224d2000    57344  zram.ko
+      crash> mod -s zsmalloc zsmalloc.ko
+           MODULE       NAME                                          BASE           SIZE  OBJECT FILE
+      ffffffde224c5180  zsmalloc                                ffffffde224bf000    40960  zsmalloc.ko
+      crash> rd 0x13d89fb0
+      rd: zspage magic incorrect: b0
+    
+    After:
+      crash> rd 0x13d89fb0
+              13d89fb0:  c2b54f7170883b20                     ;.pqO..
+    
+    Signed-off-by: chenguanyou <chenguanyou@xiaomi.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit ac097d6cb15726fa34f2d4ec5edc94aad58e0d0d
+Author: Aditya Gupta <adityag@linux.ibm.com>
+Date:   Sat Oct 14 19:09:30 2023 +0530
+
+    diskdump: add hook for additional checks on prstatus notes validity
+    
+    Upstream crash reports these warnings on PowerPC64:
+    
+        WARNING: cpu 0 invalid NT_PRSTATUS note (n_type != NT_PRSTATUS)
+        ...
+    
+    Apart from these warnings, register values are also invalid.
+    
+    This warning was found in the commit:
+    
+        commit db8c030857b4 ("diskdump/netdump: fix segmentation fault
+        caused by failure of stopping CPUs")
+    
+    With above commit, crash checks whether 'crash_notes' is initialised,
+    before mapping PRSTATUS notes.
+    
+    But some architectures such as PowerPC64, in fadump case
+    (firmware-assisted dump), don't populate 'crash_notes' since the
+    registers are already stored in the cpu notes in the vmcore.
+    
+    Instead of checking 'crash_notes' for all architectures, introduce
+    a machdep hook ('is_cpu_prstatus_valid'), for architectures to
+    decide validity checks for PRSTATUS notes.
+    
+    A default hook ('diskdump_is_cpu_prstatus_valid') has also been provided
+    for all architectures other than PowerPC64, which checks if 'crash_notes'
+    for a given cpu is valid, maintaining the current behaviour.
+    
+    PowerPC64 doesn't utilize 'crash_notes' to get register values, so no
+    additional checks are required.
+    
+    Fixes: db8c030857b4 ("diskdump/netdump: fix segmentation fault caused by failure of stopping CPUs")
+    Signed-off-by: Aditya Gupta <adityag@linux.ibm.com>
+
+commit 5e758aaa0fd8199e21a2d4d04b486bc873bd788b
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Fri Sep 29 11:58:04 2023 +0900
+
+    Make "clear" external command runnable without "!" and alias-able
+    
+    Make the "clear" external command runnable without an exclamation point
+    ("!") for convenient.  Additionally, make it acceptable as a command
+    string for alias exceptionally in external commands.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 578fc08b825515eab0991445076dfb92743864f2
+Author: Mathias Krause <minipli@grsecurity.net>
+Date:   Thu Sep 28 11:19:08 2023 +0200
+
+    memory_driver: Support overriding kernel directory
+    
+    Support compiling the module against a different kernel version than the
+    currently running one by allowing to set either KVER or KDIR variables
+    on the make commandline.
+    
+    Also modernize the makefile slightly and make use of the kernel's
+    'clean' target to ensure to remove all generated files.
+    
+    Signed-off-by: Mathias Krause <minipli@grsecurity.net>
+
+commit 1cfd513ea9c87039b70ffe70acc93ad3f38e49b7
+Author: Mathias Krause <minipli@grsecurity.net>
+Date:   Thu Sep 28 11:19:07 2023 +0200
+
+    memory_driver: Use designated initializer for 'crash_dev'
+    
+    Instead of using positional initialization, use the more modern
+    designated initializer style, as already used for 'crash_fops'.
+    
+    This makes the member initialization not only less ambiguous but also
+    allows structure layout randomization of the underlying type (as done in
+    grsecurity).
+    
+    Signed-off-by: Mathias Krause <minipli@grsecurity.net>
+
+commit 3c44056efef20ccfff4ada7ee494b04d31d0f086
+Author: Mathias Krause <minipli@grsecurity.net>
+Date:   Thu Sep 28 11:19:06 2023 +0200
+
+    memory_driver: Ensure PWD points to the current directory
+    
+    Building crash.ko broke in commit 74ac92971241 ("Support for multiple
+    jobs to build crash"), as PWD won't be updated on recursive calls to
+    'make' and will still point to the upper directory.
+    
+    This leads to the 'all' target trying to build modules in the top level
+    directory -- where there are none.
+    
+    Fix that by updating PWD to the current directory.
+    
+    Fixes: 74ac92971241 ("Support for multiple jobs to build crash")
+    Reported-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Mathias Krause <minipli@grsecurity.net>
+
+commit c9a732d0f6abe8c63f19fee5233544633dfd309f
+Author: chenguanyou <chenguanyou@xiaomi.com>
+Date:   Thu Sep 14 15:35:50 2023 +0800
+
+    arm64: Fix "vtop" command to display swap information on Linux 5.19 and later
+    
+    Kernel commit 570ef363509b ("arm64/pgtable: support
+    __HAVE_ARCH_PTE_SWP_EXCLUSIVE"), which is contained in Linux 5.19 and
+    later kernels, changed the format of swap entries on arm64.  Without the
+    patch, the "vtop" command cannot display swap information.
+    
+    Before:
+      crash> vtop 70504000
+      VIRTUAL     PHYSICAL
+      70504000    (not mapped)
+    
+      PAGE DIRECTORY: ffffff80f265c000
+         PGD: ffffff80f265c008 => 800000141537003
+         PMD: ffffff8101537c10 => 800000141538003
+         PTE: ffffff8101538820 => 12bc3e04
+    
+        PTE     vtop: cannot determine swap location
+    
+    After:
+      crash> vtop 70504000
+      VIRTUAL     PHYSICAL
+      70504000    (not mapped)
+    
+      PAGE DIRECTORY: ffffff80f265c000
+         PGD: ffffff80f265c008 => 800000141537003
+         PMD: ffffff8101537c10 => 800000141538003
+         PTE: ffffff8101538820 => 12bc3e04
+    
+        PTE                     SWAP                  OFFSET
+      12bc3e04  /first_stage_ramdisk/dev/block/zram0  1227838
+    
+            VMA           START       END     FLAGS FILE
+      ffffff80dfe7b578   70504000   707bd000 100073
+    
+      SWAP: /first_stage_ramdisk/dev/block/zram0  OFFSET: 1227838
+    
+    Signed-off-by: chenguanyou <chenguanyou@xiaomi.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit a9291fc1bf61309c74078f757f58c47ff887da10
+Author: Aditya Gupta <adityag@linux.ibm.com>
+Date:   Mon Sep 25 14:58:11 2023 +0530
+
+    ppc64: do page traversal if vmemmap_list not populated
+    
+    Currently 'crash-tool' fails on vmcore collected on upstream kernel on
+    PowerPC64 with the error:
+    
+        crash: invalid kernel virtual address: 0  type: "first list entry
+    
+    Presently the address translation for vmemmap addresses is done using
+    the vmemmap_list. But with the below commit in Linux 6.6-rc1,
+    vmemmap_list can be empty, in case of Radix MMU on PowerPC64.
+    
+        368a0590d954: (powerpc/book3s64/vmemmap: switch radix to use a
+        different vmemmap handling function)
+    
+    In case vmemmap_list is empty, then it's head is NULL, which crash tries
+    to access and fails due to accessing NULL.
+    
+    Instead of depending on 'vmemmap_list' for address translation for
+    vmemmap addresses, do a kernel pagetable walk to get the physical
+    address associated with given virtual address.
+    
+    Tested-by: Sachin Sant <sachinp@linux.ibm.com>
+    Reviewed-by: Hari Bathini <hbathini@linux.ibm.com>
+    Signed-off-by: Aditya Gupta <adityag@linux.ibm.com>
+
+commit 27f3ccd6c296099206a337c2913f370afcddf1ad
+Author: David Mair <dmair@suse.com>
+Date:   Tue Sep 12 18:11:33 2023 -0600
+
+    In verify_version() don't require specific syment type values for linux_banner symbol to get its address
+    
+    verify_version() in kernel.c gets a struct syment for linux_banner using
+    symbol_search() and uses the value member of the result as the address
+    of linux_banner in some cases based on the type member's value in the
+    same struct syment. A small number of coredumps with an unhandled type
+    ('B' or 'b') for linux_banner result in the address of linux_banner
+    being loaded from the actual linux_banner data. This fails because the
+    first ulong of the linux_banner ASCII text is treated as a dumped kernel
+    address and attempting to access that in the core fails.
+    
+    Based on a suggestion from Kazu, continue to get the struct syment for
+    linux_banner using symbol_search(). Also use get_symbol_type() for
+    linux_banner and use the result of that to decide where to get the
+    linux_banner address from, disregarding the syment type member. If
+    get_symbol_type() reports a TYPE_CODE_ARRAY (and by default with a
+    warning) use the syment value member as the linux_banner address. If
+    get_symbol_type() reports a TYPE_CODE_PTR read the address of
+    linux_banner using get_symbol_data().
+    
+    The else block doesn't strictly require braced content for a single
+    switch statement but braces are included to match style of locally
+    similar cases.
+    
+    Signed-off-by: David Mair <dmair@suse.com>
+
+commit 3253e5ac87c67dd7742e2b2bd9d912f21c1d2711
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Aug 25 14:23:27 2023 +0800
+
+    Fix "ps/vm" commands to display the memory usage for exiting tasks
+    
+    When a task is exiting, usually kernel marks its flags as 'PF_EXITING',
+    but even so, sometimes the mm_struct has not been freed, it might still
+    be valid. For such tasks, the "ps/vm" commands won't display the memory
+    usage. For example:
+    
+      crash> ps 47070
+            PID    PPID  CPU       TASK        ST  %MEM      VSZ      RSS  COMM
+          47070       1   0  ffff9ba7c4910000  UN   0.0        0        0  ra_ris.parse
+      crash> vm 47070
+      PID: 47070    TASK: ffff9ba7c4910000  CPU: 0    COMMAND: "ra_ris.parse"
+             MM               PGD          RSS    TOTAL_VM
+             0                 0            0k       0k
+    
+    This is a corner case, but it has already occurred in actual production
+    environments. Given that, let's allow the "ps/vm" commands to try to
+    display the memory usage for this case. Note that it does not guarantee
+    that it can work well at any time, which still depends on how far the
+    mm_struct deconstruction has proceeded.
+    
+    With the patch:
+      crash> ps 47070
+            PID    PPID  CPU       TASK        ST  %MEM      VSZ      RSS  COMM
+          47070       1   0  ffff9ba7c4910000  UN  90.8 38461228 31426444  ra_ris.parse
+      crash> vm 47070
+      PID: 47070    TASK: ffff9ba7c4910000  CPU: 0    COMMAND: "ra_ris.parse"
+             MM               PGD          RSS    TOTAL_VM
+      ffff9bad6e873840  ffff9baee0544000  31426444k  38461228k
+            VMA           START       END     FLAGS FILE
+      ffff9bafdbe1d6c8     400000     8c5000 8000875 /data1/rishome/ra_cu_cn_412/sbin/ra_ris.parse
+      ...
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 1aa93cd33fa11f9d9bc9dc7e6a698d690fdd1bb3
+Author: Song Shuai <suagrfillet@gmail.com>
+Date:   Fri Aug 18 17:50:28 2023 +0800
+
+    RISCV64: Add KASLR support
+    
+    This patch adds KASLR support for Crash to analyze KASLR-ed vmcore
+    since RISC-V Linux is already sufficiently prepared for KASLR [1].
+    
+    With this patch, even if the Crash '--kaslr' option is not set or Linux
+    CONFIG_RANDOMIZE_BASE is not configured, the 'derive_kaslr_offset()'
+    function will always work to calculate 'kt->relocate' which serves to
+    update the kernel virtual address.
+    
+    Testing in Qemu rv64 virt, kernel log outputed the kernel offset:
+    
+      [  121.214447] SMP: stopping secondary CPUs
+      [  121.215445] Kernel Offset: 0x37c00000 from 0xffffffff80000000
+      [  121.216312] Starting crashdump kernel...
+      [  121.216585] Will call new kernel at 94800000 from hart id 0
+      [  121.216834] FDT image at 9c7fd000
+      [  121.216982] Bye...
+    
+    Running crash with '-d 1' option and without '--kaslr' option,
+    we get the right 'kt->relocate' and kernel link addr:
+    
+      $ ../crash/crash -d 1 vmlinux vmcore_kaslr_0815
+      ...
+      KASLR:
+        _stext from vmlinux: ffffffff80002000
+        _stext from vmcoreinfo: ffffffffb7c02000
+        relocate: 37c00000 (892MB)
+      vmemmap : 0xff1c000000000000 - 0xff20000000000000
+      vmalloc : 0xff20000000000000 - 0xff60000000000000
+      mudules : 0xffffffff3952f000 - 0xffffffffb7c00000
+      lowmem  : 0xff60000000000000 -
+      kernel link addr        : 0xffffffffb7c00000
+      ...
+            KERNEL: /home/song/9_linux/linux/00_rv_kaslr/vmlinux
+          DUMPFILE: /tmp/hello/vmcore_kaslr_0815
+              CPUS: 2
+              DATE: Tue Aug 15 16:36:15 CST 2023
+            UPTIME: 00:02:01
+      LOAD AVERAGE: 0.40, 0.23, 0.09
+             TASKS: 63
+          NODENAME: stage4.fedoraproject.org
+           RELEASE: 6.5.0-rc3-00008-gad18dee423ac
+           VERSION: #17 SMP Tue Aug 15 14:41:12 CST 2023
+           MACHINE: riscv64  (unknown Mhz)
+            MEMORY: 511.8 MB
+             PANIC: "Kernel panic - not syncing: sysrq triggered crash"
+               PID: 160
+           COMMAND: "bash"
+              TASK: ff6000000152bac0  [THREAD_INFO: ff6000000152bac0]
+               CPU: 1
+             STATE: TASK_RUNNING (PANIC)
+      crash>
+    
+    [1]: https://lore.kernel.org/linux-riscv/20230722123850.634544-1-alexghiti@rivosinc.com/
+    
+    Signed-off-by: Song Shuai <suagrfillet@gmail.com>
+    Reviewed-by: Guo Ren <guoren@kernel.org>
+
+commit f774fe0f59b45596e5165eb008845b3534f650d0
+Author: Rafael Aquini <aquini@redhat.com>
+Date:   Mon Aug 14 09:41:12 2023 -0400
+
+    deduplicate kernel_version open-coded parser
+    
+    The code that parses kernel version from OSRELEASE/UTSRELEASE strings
+    and populates the global kernel table is duplicated across the codebase
+    for no good reason. This commit consolidates all the duplicated parsing
+    code into a single method to remove the unnecessary duplicated code.
+    
+    Signed-off-by: Rafael Aquini <aquini@redhat.com>
+
+commit eeaed479a438891fca96977cd64ae1166fddd38e
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Aug 14 09:54:24 2023 +0800
+
+    Fix "kmem -s|-S" not working properly when CONFIG_SLAB_FREELIST_HARDENED is enabled
+    
+    Currently, crash-utility still depends on detecting the kernel version,
+    or the asm instruction 'bswap' on x86_64/x86 architectures to decide how
+    to deal with the freelist ptr obfuscation, when kernel option
+    CONFIG_SLAB_FREELIST_HARDENED is enabled.
+    
+    As you known, the bit diffusion for freelist ptr obfuscation has
+    experienced the changes several times on the kernel side, For most
+    distributions, usually they might backport these kernel patches from
+    upstream, especially for the old kernel, the 'kmem -s|-S' will fail with
+    an error "invalid freepointer", which can be observed on ppc64le and
+    S390x architectures, etc. That is really not friendly.
+    
+    Given that, let's fix the above issues this time, and it won't rely
+    on the linux version number or asm instruction 'bswap' to decide how to
+    dereference the freelist ptr.
+    
+    Reported-by: Lucas Oakley <soakley@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Acked-by: Rafael Aquini <aquini@redhat.com>
+
+commit bc145861bfeb8b20b77309cb477359e9d46680d6
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Aug 14 09:54:23 2023 +0800
+
+    Revert "Fix "kmem -s|-S" not working properly on RHEL8.6 and later"
+    
+    This reverts commit 9253b40a0ecb2d365f89f0a5ebc28a01735c1d24.
+    
+    The commit 9253b40a0ecb only handles the current issue on x86_64/x86
+    architectures. Furthermore the freelist_ptr_bswap_x86() depends on
+    disassembling a static symbol which might not be available, depending on
+    how the compiler decides to optimize the code, that is to say, the
+    compiler might generate different code eventually.
+    
+    More importantly, a subsequent patch can cover the current issue on
+    various architectures. Given that, revert the commit.
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit ff963b795b3f93b9d1a3cc5ec0212ebca545259f
+Author: Song Shuai <suagrfillet@gmail.com>
+Date:   Fri Aug 4 17:15:59 2023 +0800
+
+    RISCV64: Use va_kernel_pa_offset in VTOP()
+    
+    Since RISC-V Linux v6.4, the commit 3335068f8721 ("riscv: Use
+    PUD/P4D/PGD pages for the linear mapping") changes phys_ram_base from
+    the physical start of the kernel to the actual start of the DRAM.
+    
+    The Crash's VTOP() still uses phys_ram_base and kernel_map.virt_addr
+    to translate kernel virtual address, that made Crash boot failed with
+    Linux v6.4 and later version.
+    
+    Let Linux export kernel_map.va_kernel_pa_offset in v6.5 and backported
+    v6.4.0 stable, so Crash can use "va_kernel_pa_offset" to translate the
+    kernel virtual address in VTOP() correctly.
+    
+    Signed-off-by: Song Shuai <suagrfillet@gmail.com>
+
+commit 69f38d777450c3fe4f089eaa403434815eecdbd7
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Aug 8 21:25:31 2023 +0800
+
+    Fix "ps/vm" commands to display correct memory usage
+    
+    Kernel commit eca56ff906bd ("mm, shmem: add internal shmem resident
+    memory accounting") added shmem resident memory accounting and it's
+    tallied up into the mm_rss_stat counter.
+    
+    As a result, the "ps/vm" commands miss the shmem pages count and fail to
+    show correct memory usage when a process uses an anonymous shared memory
+    region.
+    
+    Without the patch:
+      crash> ps 2150
+            PID    PPID  CPU       TASK        ST  %MEM      VSZ      RSS  COMM
+           2150    2105  14  ffff8fba86d74d40  IN   0.0 10488392      444  mmap_test
+                                                                      ^^^
+    
+    Let's count the shmem pages together with regular files and anonymous
+    pages.
+    
+    With the patch:
+      crash> ps 2150
+            PID    PPID  CPU       TASK        ST  %MEM      VSZ      RSS  COMM
+           2150    2105  14  ffff8fba86d74d40  IN  20.8 10488392  3659008  mmap_test
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 558aecc98987e54b122a09ce0d3c3484b034277f
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Aug 2 16:18:41 2023 +0800
+
+    Fix "foreach" command with "DE" state to display only expected tasks
+    
+    Currently, the "foreach DE ps -m" command may display "DE" as well as
+    "ZO" state tasks as below:
+    
+      crash> foreach DE ps -m
+      ...
+      [0 00:00:00.040] [ZO]  PID: 11458    TASK: ffff91c75680d280  CPU: 7    COMMAND: "ora_w01o_p01mci"
+      [0 00:00:00.044] [ZO]  PID: 49118    TASK: ffff91c7bf3e8000  CPU: 19   COMMAND: "oracle_49118_p0"
+      [0 00:00:00.050] [ZO]  PID: 28748    TASK: ffff91a7cbde3180  CPU: 2    COMMAND: "ora_imr0_p01sci"
+      [0 00:00:00.050] [DE]  PID: 28405    TASK: ffff91a7c8eb0000  CPU: 27   COMMAND: "ora_vktm_p01sci"
+      [0 00:00:00.051] [ZO]  PID: 31716    TASK: ffff91a7f7192100  CPU: 6    COMMAND: "ora_p001_p01sci"
+      ...
+    
+    That is not expected behavior, the "foreach" command needs to handle
+    such cases. Let's add a check to determine if the task state identifier
+    is specified and the specified identifier is equal to the actual task
+    state identifier, so that it can filter out the unspecified state
+    tasks.
+    
+    With the patch:
+      crash> foreach DE ps -m
+      [0 00:00:00.050] [DE]  PID: 28405    TASK: ffff91a7c8eb0000  CPU: 27   COMMAND: "ora_vktm_p01sci"
+      crash>
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit c74f375e0ef7cd9b593fa1d73c47505822c8f2a0
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Mon Jul 24 17:25:12 2023 +0900
+
+    Fix get_linux_banner_from_vmlinux() for vmlinux without ".rodata" symbol
+    
+    As written in the previous patch, some recent kernels do not have the
+    ".rodata" symbol.  As a result, the get_linux_banner_from_vmlinux()
+    returns FALSE and the slower fallback routine is used.
+    
+    Use "__start_rodata" symbol if the ".rodata" symbol is not available.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit aa5763800d614ff6080fd1909517a3939c250e86
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Jul 21 12:36:18 2023 +0800
+
+    Fix warning about kernel version inconsistency during crash startup
+    
+    Currently, the symbol ".rodata" may not be found in some vmlinux, and
+    the strings command will still be used to get the linux banner string,
+    but this gets two strings as below:
+    
+      # strings vmlinux | grep "Linux version"
+      Linux version 6.5.0-0.rc2.17.fc39.x86_64 ... GNU ld version 2.40-9.fc39) # SMP PREEMPT_DYNAMIC
+      Linux version 6.5.0-0.rc2.17.fc39.x86_64 ... GNU ld version 2.40-9.fc39) #1 SMP PREEMPT_DYNAMIC Mon Jul 17 14:57:35 UTC 2023
+    
+    In the verify_namelist(), the while-loop will only determine if the
+    first linux banner string above matches and break the loop. But actually
+    the second string above is correct one. Eventually, crash starts up with
+    the following warning:
+    
+      # ./crash -s vmlinux vmcore
+      WARNING: kernel version inconsistency between vmlinux and dumpfile
+    
+      # ./crash -s
+      WARNING: kernel version inconsistency between vmlinux and live memory
+    
+    Let's always try to match the correct one, otherwise still prints a
+    warning as before.
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit f0b59524624b83d634b3fa8ab4ab3acf9ccce9df
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Mon Jul 10 15:05:36 2023 +0900
+
+    Fix segmentation fault by "tree -s" option with Maple Tree
+    
+    Without the patch, do_mt_entry() can call dump_struct_members_for_tree()
+    with a NULL entry, and parse_for_member_extended() will cause a
+    segmentation fault during strncpy().
+    
+    This is caused by "tree -t maple -s struct.member.member" style multiple
+    level member access:
+    
+      crash> tree -t maple -s irq_desc.irq_data.irq  sparse_irqs
+      ffff936980188400
+        irq_data.irq = 0,
+      ffff93698018be00
+        irq_data.irq = 1,
+      ...
+      ffff936980f38e00
+        irq_data.irq = 19,
+      Segmentation fault (core dumped)
+    
+      (gdb) bt
+      #0  0x00007faaf8e51635 in __strncpy_avx2 () from /lib64/libc.so.6
+      #1  0x00000000005e5927 in parse_for_member_extended (dm=dm@entry=0x7ffcb9e6d860, ...
+      #2  0x0000000000603c45 in dump_struct_member (s=s@entry=0x128cde0 <shared_bufs+1024> ...
+      #3  0x0000000000513cf5 in dump_struct_members_for_tree (td=td@entry=0x7ffcb9e6eeb0, ...
+      #4  0x0000000000651f15 in do_mt_entry (entry=0, min=min@entry=20, max=max@entry=119, ...
+      ...
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 38d35bd1423ccafd0b8be0744155ce59ef3034ff
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Wed Jul 12 17:55:29 2023 +0900
+
+    Fix "irq [-a|-s]" options on Linux 6.5-rc1 and later
+    
+    Kernel commit 721255b982 ("genirq: Use a maple tree for interrupt
+    descriptor management"), which is contained in Linux 6.5-rc1 and later
+    kernels, replaced irq_desc_tree with a maple tree sparse_irqs.
+    
+    Without the patch, "irq [-a|-s]" options fail with an error, e.g. the
+    following on x86_64, on kernels configured with CONFIG_SPARSE_IRQ=y.
+    
+      crash> irq
+      irq: x86_64_dump_irq: irq_desc[] or irq_desc_tree do not exist?
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit d17d51a92a3a1c1cce1e646c38fe52ca99406cf9
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Fri Jul 7 15:17:18 2023 +0900
+
+    Exclude zero entries from do_maple_tree() return value
+    
+    While the return value of do_radix_tree() and do_xarray() does not
+    contain NULL entries, do_maple_tree()'s one contains NULL entries.
+    
+    Make this behavior consistent with the previous tree functions to make
+    replacement easier, especially for the following patch.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit b76e116c50ffc228ebc08eb8de35019320679257
+Author: Dave Wysochanski <dwysocha@redhat.com>
+Date:   Thu Jul 6 10:53:18 2023 -0400
+
+    vmware: Improve output when we fail to read vmware 'vmsn' file
+    
+    Today if crash fails to read some structure in a vmware 'vmsn' file,
+    it will throw an "No such file or directory" message.  Such a generic
+    message does not give any clue as to the problem, but instead sounds
+    like the file may not exist when it does, for example:
+      $ crash ./vmcore.vmsn  ./vmlinux
+    
+      crash 8.0.3
+      ...
+    
+      crash: vmw: Failed to read './vmcore.vmsn': [Error 2] No such file or directory
+    
+      crash: ./vmcore.vmsn: initialization failed
+    
+      $ ls -l ./vmcore.vmsn
+      -rwxrwxrwx. 7 myuser mygroup 12128999 Jul  4 07:21 ./vmcore.vmsn
+    
+    Improve the above error message so we at least know which portion
+    of the file crash had difficulty reading.  After this patch, the
+    above error looks like:
+      crash: vmw: Failed to read 'cptgroupdesc' from file './vmcore.vmsn': [Error 2] No such file or directory
+    
+    Signed-off-by: Dave Wysochanski <dwysocha@redhat.com>
+
+commit 6d0be1316aa3666895c0a8a0d3c98c235ec03bd4
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Mon Jul 10 10:42:08 2023 +0900
+
+    Fix "irq -a" option on Linux 6.0 and later
+    
+    Kernel commit f0dd891dd5a1d ("lib/cpumask: move some one-line wrappers
+    to header file"), which is contained in Linux 6.0 and later kernels,
+    inlined alloc_cpumask_var() function.  As a result, the "irq -a" option
+    fails to determine that cpumask_var_t is a pointer, and displays wrong
+    CPU affinity for IRQs:
+    
+      crash> irq -a
+      IRQ NAME                 AFFINITY
+        1 i8042                3
+        4 ttyS0
+        8 rtc0
+        9 acpi                 3
+       12 i8042                3
+      ...
+    
+    Use alloc_cpumask_var_node() function symbol instead to fix it.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 4ee56105881d7bb1da1e668ac5bb47a4e0846676
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Jul 5 10:02:59 2023 +0800
+
+    Fix compilation error due to new strlcpy function that glibc added
+    
+    The crash-utility has its own strlcpy(), but recently the latest glibc
+    has also implemented the strlcpy function, which is derived from
+    OpenBSD.  Eventually this caused the following compilation error:
+    
+      # make -j8 lzo
+      ...
+      In file included from global_data.c:18:
+      defs.h:5556:8: error: conflicting types for ‘strlcpy’; have ‘size_t(char *, char *, size_t)’ {aka ‘long unsigned int(char *, char *, long unsigned int)’}
+       5556 | size_t strlcpy(char *, char *, size_t);
+            |        ^~~~~~~
+      In file included from memory.c:19:
+      defs.h:5556:8: error: conflicting types for ‘strlcpy’; have ‘size_t(char *, char *, size_t)’ {aka ‘long unsigned int(char *, char *, long unsigned int)’}
+       5556 | size_t strlcpy(char *, char *, size_t);
+            |        ^~~~~~~
+      ...
+    
+    To fix the issue, let's declare the strlcpy() as a weak function and
+    keep the same parameter types as the glibc function has.
+    
+    Related glibc commits:
+    454a20c8756c ("Implement strlcpy and strlcat [BZ #178]")
+    d2fda60e7c40 ("manual: Manual update for strlcat, strlcpy, wcslcat, wclscpy")
+    388ae538ddcb ("hurd: Add strlcpy, strlcat, wcslcpy, wcslcat to libc.abilist")
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 88580068b7dd96bf679c82bdc05e146968ade10c
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Fri Jun 23 16:34:35 2023 +0900
+
+    Fix failure of gathering task table on Linux 6.5-rc1 and later
+    
+    Kernel commit b69f0aeb0689 ("pid: Replace struct pid 1-element array
+    with flex-array") changed pid.numbers[1] to pid.numbers[].  With this,
+    the size of struct pid does not contain the size of struct upid:
+    
+      (gdb) ptype /o struct pid
+      /* offset    |  size */  type = struct pid {
+      /*    0      |     4 */    refcount_t count;
+      ...
+      /*   96      |     0 */    struct upid numbers[];
+          ^^^^          ^^^
+                                 /* total size (bytes):   96 */
+                               }                         ^^^^
+    
+    As a result, in refresh_xarray_task_table(), crash does not read the
+    data of pid.numbers[0].ns and cannot gather the task table correctly.
+    
+      $ crash vmlinux vmcore
+      ...
+      WARNING: active task ffff936992ad0000 on cpu 1 not found in PID hash
+      ...
+      crash> ps -S
+        RU: 9
+      crash>
+    
+    Increase the size of reading struct pid by SIZE(upid) in this case.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 7750e61fdb2a083f26156a5338aa2ebe26447f3f
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu Jun 22 16:09:07 2023 +0900
+
+    Support module memory layout change on Linux 6.4
+    
+    Support module memory layout change on Linux 6.4 by kernel commit
+    ac3b43283923 ("module: replace module_layout with module_memory") [1].
+    Without the patch, crash cannot even start a session with an error
+    message like this:
+    
+      crash: invalid structure member offset: module_core_size
+             FILE: kernel.c  LINE: 3787  FUNCTION: module_init()
+    
+    [1] https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=ac3b43283923
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 8b24b2025fb4ae9bd6102bb054bd23987c35387e
+Author: Likhitha Korrapati <likhitha@linux.ibm.com>
+Date:   Fri Jun 16 17:25:19 2023 +0530
+
+    ppc64: Remove redundant PTE checks
+    
+    Remove redundant checks for PTE (Page Table Entry) because those
+    conditions are already covered.
+    
+            if (!(pte & _PAGE_PRESENT)) {
+                    ...
+                    return FALSE;
+            }
+    
+            if (!pte)
+                    return FALSE;
+    
+    The second pte check is redundant because it holds true only when pte is
+    0. If pte is 0 then (!(pte & _PAGE_PRESENT)) is true and it will return
+    false. So there is no need for one more pte check.
+    
+    Signed-off-by: Likhitha Korrapati <likhitha@linux.ibm.com>
+
+commit 6c8cd9b5dcf48221e5f75fc5850bb4719d77acce
+Author: HATAYAMA Daisuke <d.hatayama@fujitsu.com>
+Date:   Wed Jun 7 18:37:34 2023 +0900
+
+    arm64: Fix again segfault in arm64_is_kernel_exception_frame() when corrupt stack pointer address is given
+    
+    This is the second trial from the commit
+    9868ebc8e648e5791764a51567a23efae7170d9b that was reverted at the
+    previous commit.
+    
+    As described in the previous commit, result of STACK_OFFSET_TYPE() can
+    be an address out of bt->stackbuf and hence the address needs to be
+    checked prior to being referred to as an pt_regs object.
+    
+    So, to fix the issue, let's check if stkptr points to within the range
+    of the kernel stack first.
+    
+    [ kh: added a warning at Lianbo's suggestion ]
+    
+    Signed-off-by: HATAYAMA Daisuke <d.hatayama@fujitsu.com>
+
+commit 91a76958e4a8a9fb67ac61166ff36e8dc961b3b9
+Author: HATAYAMA Daisuke <d.hatayama@fujitsu.com>
+Date:   Wed Jun 7 18:37:33 2023 +0900
+
+    Revert "Fix segfault in arm64_is_kernel_exception_frame() when corrupt stack pointer address is given"
+    
+    This reverts commit 9868ebc8e648e5791764a51567a23efae7170d9b.
+    
+    The commit 9868ebc8e648e5791764a51567a23efae7170d9b causes the issue
+    that bt command fails to show backtraces for the tasks that is running
+    in the user mode at the moment of the kernel panic as follows:
+    
+      crash> bt 1734
+      PID: 1734     TASK: ffff000000392200  CPU: 4     COMMAND: "insmod"
+      bt: invalid stack pointer is given
+    
+    The root cause is that while the commit added a sanity check into
+    STACK_OFFSET_TYPE() to validate if a given candidate address of any
+    interrupt or exception frame is contained within the range of the
+    corresponding kernel stack, the premise that the STACK_OFFSET_TYPE()
+    should not return out-of-the-buffer address, is wrong.
+    
+    Reexamining the relevant surrounding part of the backtracing code, it
+    looks to me now that the STACK_OFFSET_TYPE() is originally expected to
+    return an out-of-the-buffer address, like the address of the top of
+    the corresponding kernel stack, e.g. at here:
+    
+      static int
+      arm64_in_kdump_text(struct bt_info *bt, struct arm64_stackframe *frame)
+      {
+      ...
+              if (bt->flags & BT_USER_SPACE)
+                      start = (ulong *)&bt->stackbuf[(ulong)(STACK_OFFSET_TYPE(bt->stacktop))];
+              else {
+    
+    Note that the above bt 1734 aborts here.
+    
+    Hence, the current implementation policy around STACK_OFFSET_TYPE()
+    looks that the caller side is responsible for understanding the fact
+    in advance and for avoiding making buffer overrun carefully.
+    
+    To fix this issue, revert the commit.
+    
+    Signed-off-by: HATAYAMA Daisuke <d.hatayama@fujitsu.com>
+
+commit ec1e61b33a705b8be8d116a541c7b076b0429deb
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Jun 12 18:50:05 2023 +0800
+
+    Fix invalid structure size error during crash startup on ppc64
+    
+    The crash utility will fail to start session on ppc64 with the following
+    error:
+    
+      # crash vmlinux vmcore -s
+    
+      crash: invalid structure size: note_buf
+             FILE: diskdump.c  LINE: 121  FUNCTION: have_crash_notes()
+    
+      [./crash] error trace: 101859ac => 10291798 => 10291450 => 10266038
+    
+        10266038: SIZE_verify+156
+        10291450: have_crash_notes+308
+        10291798: map_cpus_to_prstatus_kdump_cmprs+448
+        101859ac: task_init+11980
+    
+    The reason is that the size of note_buf is not initialized before using
+    SIZE(note_buf) in the have_crash_notes() on some architectures including
+    ppc64.  Let's initialize it in task_init() to fix this issue.
+    
+    Fixes: db8c030857b4 ("diskdump/netdump: fix segmentation fault caused by failure of stopping CPUs")
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 77d8621876c1c6a3a25b91e464ba588a542485fb
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu May 18 16:53:54 2023 +0900
+
+    x86_64: Fix "bt" command printing stale entries on Linux 6.4 and later
+    
+    Kernel commit fb799447ae29 ("x86,objtool: Split UNWIND_HINT_EMPTY in
+    two"), which is contained in Linux 6.4 and later kernels, changed
+    ORC_TYPE_CALL macro from 0 to 2.  As a result, the "bt" command cannot
+    use ORC entries, and can display stale entries in a call trace.
+    
+      crash> bt 1
+      PID: 1        TASK: ffff93cd06294180  CPU: 51   COMMAND: "systemd"
+       #0 [ffffb72bc00cbc98] __schedule at ffffffff86e52aae
+       #1 [ffffb72bc00cbd00] schedule at ffffffff86e52f6a
+       #2 [ffffb72bc00cbd18] schedule_hrtimeout_range_clock at ffffffff86e58ef5
+       #3 [ffffb72bc00cbd88] ep_poll at ffffffff8669624d
+       #4 [ffffb72bc00cbe28] do_epoll_wait at ffffffff86696371
+       #5 [ffffb72bc00cbe30] do_timerfd_settime at ffffffff8669902b        <<
+       #6 [ffffb72bc00cbe60] __x64_sys_epoll_wait at ffffffff86696bf0
+       #7 [ffffb72bc00cbeb0] do_syscall_64 at ffffffff86e3feb9
+       #8 [ffffb72bc00cbee0] __task_pid_nr_ns at ffffffff863330d7          <<
+       #9 [ffffb72bc00cbf08] syscall_exit_to_user_mode at ffffffff86e466b2 << stale entries
+      #10 [ffffb72bc00cbf18] do_syscall_64 at ffffffff86e3fec9             <<
+      #11 [ffffb72bc00cbf50] entry_SYSCALL_64_after_hwframe at ffffffff870000aa
+    
+    Also, kernel commit ffb1b4a41016 added a member to struct orc_entry.
+    Although this does not affect the crash's unwinder, its debugging
+    information can be displayed incorrectly.
+    
+    To fix these,
+    (1) introduce "kernel_orc_entry_6_4" structure corresponding to 6.4 and
+        abstruction layer "orc_entry" structure in crash,
+    (2) switch ORC_TYPE_CALL to 2 or 0 with kernel's orc_entry structure.
+    
+    Related orc_entry history:
+     v4.14 39358a033b2e introduced struct orc_entry
+     v4.19 d31a580266ee added orc_entry.end member
+     v6.3  ffb1b4a41016 added orc_entry.signal member
+     v6.4  fb799447ae29 removed end member and changed type member to 3 bits
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 8527bbff71cbdfd90a67d5cec4a1d94156e6bf13
+Author: Hsin-Yi Wang <hsinyi@chromium.org>
+Date:   Wed May 31 14:01:36 2023 +0800
+
+    Output prompt when stdin is not a TTY
+    
+    When stdin is not a TTY, prompt ("crash> ") won't be displayed. If
+    another process interact with crash with piped stdin/stdout, it will not
+    get the prompt as a delimiter.
+    
+    Compared to other debugger like gdb, crash seems intended to give a
+    prompt in this case in the beginning of process_command_line(). It
+    checks if pc->flags does NOT have any of
+    READLINE|SILENT|CMDLINE_IFILE|RCHOME_IFILE|RCLOCAL_IFILE, a
+    prompt should be printed. The check will never be true since READLINE is
+    set in setup_environment() unconditionally.
+    
+    It makes more sense to change the READLINE flag in the check to TTY
+    instead. Besides this change, the prompt in process_command_line() should
+    only be print when it's not in the middle of processing the input file
+    recovering from a previous FATAL command, because the prompt will be
+    displayed by the exec_input_file().
+    
+    Additionally, when stdin is not TTY, repeat the command line from user
+    after prompt, which can give more context.
+    
+    The prompt and command line can be opt out by using the silent (-s) flag.
+    
+    Signed-off-by: Hsin-Yi Wang <hsinyi@chromium.org>
+
+commit 9868ebc8e648e5791764a51567a23efae7170d9b
+Author: HATAYAMA Daisuke <d.hatayama@fujitsu.com>
+Date:   Tue May 30 19:38:35 2023 +0900
+
+    Fix segfault in arm64_is_kernel_exception_frame() when corrupt stack pointer address is given
+    
+    Due to the corrupted mapping fixed by the previous commit,
+    arm64_is_kernel_exception_frame() can receive invalid stack pointer
+    address via the 2nd argument; different NT_PRSTATUS contains different
+    task's stack pointer address. However, macro STACK_OFFSET_TYPE() never
+    checks if a given address is within the range of the kernel stack of
+    the corresponding task and hence can result in referring to outside of
+    bt->stackbuf.
+    
+            static int
+            arm64_is_kernel_exception_frame(struct bt_info *bt, ulong stkptr)
+            {
+                            struct arm64_pt_regs *regs;
+                    struct machine_specific *ms = machdep->machspec;
+    
+                            regs = (struct arm64_pt_regs *)&bt->stackbuf[(ulong)(STACK_OFFSET_TYPE(stkptr))];
+    
+            =>      if (INSTACK(regs->sp, bt) && INSTACK(regs->regs[29], bt) &&
+                            !(regs->pstate & (0xffffffff00000000ULL | PSR_MODE32_BIT)) &&
+                            is_kernel_text(regs->pc) &&
+                            is_kernel_text(regs->regs[30] | ms->CONFIG_ARM64_KERNELPACMASK)) {
+    
+    To fix this issue, check if the given stack pointer address points to
+    the range of the kernel stack of the corresponding task, and abort if
+    it turns out to be invalid.
+    
+    Although the corrupted mapping has already been fixed, this fix is
+    still needed because corrupt stack pointer address can still be passed
+    here from different reasons. Consider, for example, that data on the
+    kernel stack can be modified abnormally due to any kernel bugs or
+    hardware issues.
+    
+    Signed-off-by: HATAYAMA Daisuke <d.hatayama@fujitsu.com>
+
+commit db8c030857b4e318728c51c20da687906c109d0d
+Author: HATAYAMA Daisuke <d.hatayama@fujitsu.com>
+Date:   Tue May 30 19:38:34 2023 +0900
+
+    diskdump/netdump: fix segmentation fault caused by failure of stopping CPUs
+    
+    There's no NMI on ARM. Hence, stopping the non-panicking CPUs from the
+    panicking CPU via IPI can fail easily if interrupts are being masked
+    in those moment. Moreover, crash_notes are not initialized for such
+    unstopped CPUs and the corresponding NT_PRSTATUS notes are not
+    attached to vmcore. However, crash utility never takes it
+    consideration such uninitialized crash_notes and then ends with
+    mapping different NT_PRSTATUS to actually unstopped CPUs. This corrupt
+    mapping can result crash utility into segmentation fault in the
+    operations where register values in NT_PRSTATUS notes are used.
+    
+    For example:
+    
+        crash> bt 1408
+        PID: 1408     TASK: ffff000003e22200  CPU: 2    COMMAND: "repro"
+        Segmentation fault (core dumped)
+    
+        crash> help -D
+        diskdump_data:
+                          filename: 127.0.0.1-2023-05-26-02:21:27/vmcore-ld1
+                                 flags: 46 (KDUMP_CMPRS_LOCAL|ERROR_EXCLUDED|LZO_SUPPORTED)
+        ...snip...
+                           notes_buf: 1815df0
+          num_vmcoredd_notes: 0
+          num_prstatus_notes: 5
+                                notes[0]: 1815df0 (NT_PRSTATUS)
+                                                  si.signo: 0  si.code: 0  si.errno: 0
+        ...snip...
+                                                  PSTATE: 80400005   FPVALID: 00000000
+                                notes[4]: 1808f10 (NT_PRSTATUS)
+        Segmentation fault (core dumped)
+    
+    To fix this issue, let's map NT_PRSTATUS to some CPU only if the
+    corresponding crash_notes is checked to be initialized.
+    
+    [ kh: moved existence check for crash_notes out of the loop ]
+    
+    Signed-off-by: HATAYAMA Daisuke <d.hatayama@fujitsu.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit a0eceb041dfa248d66f9f9a455106184b7823bec
+Author: Rongwei Wang <rongwei.wang@linux.alibaba.com>
+Date:   Mon May 29 19:55:51 2023 +0800
+
+    arm64/x86_64: Enhance "vtop" command to show zero_pfn information
+    
+    Enhance the "vtop" command to show "ZERO PAGE" information when PTE or
+    PMD has attached to {huge_}zero_pfn.  For example:
+    
+      crash> vtop -c 13674 ffff8917e000
+      VIRTUAL     PHYSICAL
+      ffff8917e000  836e71000
+    
+      PAGE DIRECTORY: ffff000802f8d000
+         PGD: ffff000802f8dff8 => 884e29003
+         PUD: ffff000844e29ff0 => 884e93003
+         PMD: ffff000844e93240 => 840413003
+         PTE: ffff000800413bf0 => 160000836e71fc3
+        PAGE: 836e71000  (ZERO PAGE)
+      ...
+    
+    Hugepage case:
+      crash> vtop -c 14538 ffff95800000
+      VIRTUAL     PHYSICAL
+      ffff95800000  910c00000
+    
+      PAGE DIRECTORY: ffff000801fa0000
+         PGD: ffff000801fa0ff8 => 884f53003
+         PUD: ffff000844f53ff0 => 8426cb003
+         PMD: ffff0008026cb560 => 60000910c00fc1
+        PAGE: 910c00000  (2MB, ZERO PAGE)
+      ...
+    
+    Note that
+    1. support displaying zero page only for THP (except for 1G THP)
+    2. do not support hugetlb cases.
+    
+    Signed-off-by: Rongwei Wang <rongwei.wang@linux.alibaba.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 342cf340ed0386880fe2a3115d6bef32eabb511b
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu May 18 11:48:28 2023 +0900
+
+    Fix "kmem -v" option displaying no regions on Linux 6.3 and later
+    
+    Kernel commit 869176a09606 ("mm/vmalloc.c: add flags to mark vm_map_ram
+    area"), which is contained in Linux 6.3 and later, added "flags" member
+    to struct vmap_area.  This was the revival of the "flags" member as
+    kernel commit 688fcbfc06e4 had eliminated it before.
+    
+    As a result, crash started to use the old procedure using the member and
+    displays no vmalloc'd regions, because it does not have the same flag
+    value as the old one.
+    
+      crash> kmem -v
+         VMAP_AREA         VM_STRUCT                 ADDRESS RANGE                SIZE
+      crash>
+    
+    To fix this, also check if vmap_area.purge_list exists, which was
+    introduced with the flags and removed later, to determine that the flags
+    member is the old one.
+    
+    Related vmap_area history:
+     v2.6.28 db64fe02258f introduced vmap_area with flags and purge_list
+     v5.4    688fcbfc06e4 removed flags
+     v5.11   96e2db456135 removed purge_list
+     v6.3    869176a09606 added flags again
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 58c1816521c2e6bece3d69256b1866c9df8d93aa
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Tue May 16 08:59:50 2023 +0900
+
+    Fix failure of "dev -d|-D" options on Linux 6.4 and later kernels
+    
+    Kernel commit 2df418cf4b72 ("driver core: class: remove subsystem
+    private pointer from struct class"), which is contained in Linux 6.4 and
+    later kernels, removed the class.p member for struct subsys_private.  As
+    a result, the "dev -d|-D" options fail with the following error.
+    
+      dev: invalid structure member offset: class_p
+           FILE: dev.c  LINE: 4689  FUNCTION: init_iter()
+    
+    Search the class_kset list for the subsys_private of block class to fix
+    this.
+    
+    As a preparation, introduce get_subsys_private() function, which is
+    abstracted from the same search procedure in init_memory_block().
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 040a56e9f9d0df15a2f8161ed3a0a907d70dda03
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Wed May 10 16:09:03 2023 +0900
+
+    Fix kernel version macros for revision numbers over 255
+    
+    The current comparison macros for kernel version shift minor number only
+    8 bits.  This can cause an unexpected result on kernels with revision
+    number over 255, e.g. Linux 4.14.314.
+    
+    In fact, on Linux 4.14.314 for x86_64 without CONFIG_RANDOMIZE_BASE=y
+    (KASLR), the following condition became false in x86_64_init().
+    
+        ((THIS_KERNEL_VERSION >= LINUX(4,14,84)) &&
+         (THIS_KERNEL_VERSION < LINUX(4,15,0)))
+    
+    As a result, crash used a wrong hard-coded value for PAGE_OFFSET and
+    failed to start a session with the following seek error.
+    
+      crash: seek error: physical address: 200e000  type: "pud page"
+    
+    Shift the major and minor number by 24 and 16 bits respectively to fix
+    this issue.
+    
+    Reported-by: Luiz Capitulino <luizcap@amazon.com>
+    Tested-by: Luiz Capitulino <luizcap@amazon.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 2505a65ff54719567646b2775db17dc0419940d1
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu Apr 27 10:11:35 2023 +0900
+
+    Mark start of 8.0.4 development phase with version 8.0.3++
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
