@@ -1,0 +1,1506 @@
+commit ceacceef7d13134d327719a624cfafed99e90f8a
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Tue Apr 23 13:08:44 2024 +0900
+
+    crash-8.0.4 -> crash-8.0.5
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit eedf12d4758409c3c405f56edf3177a3955e1f67
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Mar 6 14:31:27 2024 +0800
+
+    gdb: fix "p" command to print module variables correctly
+    
+    Some objects format may potentially support copy relocations, but
+    currently the maybe_copied is always initialized to 0 in the symbol().
+    And the type is 'mst_file_bss', not always the 'mst_bss' or 'mst_data'
+    in the lookup_minimal_symbol_linkage(). For example:
+    
+    (gdb) p *msymbol
+    $42 = {<general_symbol_info> = {m_name = 0x349812f "test_no_static", value = {ivalue = 8, block = 0x8,
+          bytes = 0x8 <error: Cannot access memory at address 0x8>, address = 8, common_block = 0x8, chain = 0x8}, language_specific = {
+          obstack = 0x0, demangled_name = 0x0}, m_language = language_auto, ada_mangled = 0, section = 20}, size = 4,
+      filename = 0x6db3440 "test_sanity.c", type = mst_file_bss, created_by_gdb = 0, target_flag_1 = 0, target_flag_2 = 0, has_size = 1,
+      maybe_copied = 0, name_set = 1, hash_next = 0x0, demangled_hash_next = 0x0}
+    
+    This causes a problem that the 'p' command cannot work well as expected,
+    and emits an error or a bogus value:
+    
+      crash> mod -s test_sanity /home/test_sanity.ko
+           MODULE       NAME                         BASE           SIZE  OBJECT FILE
+      ffffffffc1084040  test_sanity            ffffffffc1082000    16384  /home/test_sanity.ko
+      crash> p test_no_static
+      p: gdb request failed: p test_no_static
+      crash>
+    
+    The issue occurs with Linux 6.2 and later or kernels that have kernel
+    commit 80e4c1cd42ff ("x86/retbleed: Add X86_FEATURE_CALL_DEPTH") and
+    configured with CONFIG_CALL_DEPTH_TRACKING=y, including RHEL9.3 and
+    later kernels.
+    
+    With the patch:
+      crash> mod -s test_sanity /home/test_sanity.ko
+           MODULE       NAME                         BASE           SIZE  OBJECT FILE
+      ffffffffc1084040  test_sanity            ffffffffc1082000    16384  /home/test_sanity.ko
+      crash> p test_no_static
+      test_no_static = $1 = 5
+      crash>
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 7d4daf0c035409f677afd87e8d3b3063447dd63e
+Author: Aureau, Georges (Kernel Tools ERT) <georges.aureau@hpe.com>
+Date:   Thu Apr 4 14:39:06 2024 +0000
+
+    x86_64: Fix "bt" command to handle IRQ exception frames properly
+    
+    On x86_64, there are cases where crash cannot handle IRQ exception
+    frames properly.  For example, with RHEL9.3 kernel, "bt" command fails
+    with with "WARNING possibly bogus exception frame":
+    
+      crash> bt -c 30
+      PID: 2898241  TASK: ff4cb0ce0da0c680  CPU: 30   COMMAND: "star-ccm+"
+       #0 [fffffe4658d88e58] crash_nmi_callback at ffffffffa00675e8
+       #1 [fffffe4658d88e68] nmi_handle at ffffffffa002ebab
+      ...
+      --- <NMI exception stack> ---
+      ...
+      #13 [ff5eba269937cf90] __do_softirq at ffffffffa0c6c007
+      #14 [ff5eba269937cfe0] __irq_exit_rcu at ffffffffa010ef61
+      #15 [ff5eba269937cff0] sysvec_apic_timer_interrupt at ffffffffa0c58ca2
+      --- <IRQ stack> ---
+          RIP: 0000000000000010  RSP: 0000000000000018  RFLAGS: ff5eba26ddc9f7e8
+          RAX: 0000000000000a20  RBX: ff5eba26ddc9f940  RCX: 0000000000001000
+          RDX: ffffffb559980000  RSI: ff4cb12d67207400  RDI: ffffffffffffffff
+          RBP: 0000000000001000   R8: ff5eba26ddc9f940   R9: ff5eba26ddc9f8af
+          R10: 0000000000000003  R11: 0000000000000a20  R12: ff5eba26ddc9f8b0
+          R13: 000000283c07f000  R14: ff4cb0f5a29a1c00  R15: 0000000000000001
+          ORIG_RAX: ffffffffa07c4e60  CS: 0206  SS: 7000001cf0380001
+      bt: WARNING: possibly bogus exception frame
+    
+    Running "crash" with "--machdep irq_eframe_link=0xffffffffffffffe8"
+    option (i.e. thus irq_eframe_link = -24) works properly:
+    
+      PID: 2898241  TASK: ff4cb0ce0da0c680  CPU: 30   COMMAND: "star-ccm+"
+       #0 [fffffe4658d88e58] crash_nmi_callback at ffffffffa00675e8
+       #1 [fffffe4658d88e68] nmi_handle at ffffffffa002ebab
+      ...
+      --- <NMI exception stack> ---
+      ...
+      #13 [ff5eba269937cf90] __do_softirq at ffffffffa0c6c007
+      #14 [ff5eba269937cfe0] __irq_exit_rcu at ffffffffa010ef61
+      #15 [ff5eba269937cff0] sysvec_apic_timer_interrupt at ffffffffa0c58ca2
+      --- <IRQ stack> ---
+      #16 [ff5eba26ddc9f738] asm_sysvec_apic_timer_interrupt at ffffffffa0e00e06
+          [exception RIP: alloc_pte.constprop.0+32]
+          RIP: ffffffffa07c4e60  RSP: ff5eba26ddc9f7e8  RFLAGS: 00000206
+          RAX: ff5eba26ddc9f940  RBX: 0000000000001000  RCX: 0000000000000a20
+          RDX: 0000000000001000  RSI: ffffffb559980000  RDI: ff4cb12d67207400
+          RBP: ff5eba26ddc9f8b0   R8: ff5eba26ddc9f8af   R9: 0000000000000003
+          R10: 0000000000000a20  R11: ff5eba26ddc9f940  R12: 000000283c07f000
+          R13: ff4cb0f5a29a1c00  R14: 0000000000000001  R15: ff4cb0f5a29a1bf8
+          ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+      #17 [ff5eba26ddc9f830] iommu_v1_map_pages at ffffffffa07c5648
+      #18 [ff5eba26ddc9f8f8] __iommu_map at ffffffffa07d7803
+      #19 [ff5eba26ddc9f990] iommu_map_sg at ffffffffa07d7b71
+      #20 [ff5eba26ddc9f9f0] iommu_dma_map_sg at ffffffffa07ddcc9
+      #21 [ff5eba26ddc9fa90] __dma_map_sg_attrs at ffffffffa01b5205
+      ...
+    
+    Some background:
+    
+    asm_common_interrupt:
+          callq  error_entry
+          movq   %rax,%rsp
+          movq   %rsp,%rdi
+          movq   0x78(%rsp),%rsi
+          movq   $-0x1,0x78(%rsp)
+          call common_interrupt    # rsp pointing to regs
+    
+    common_interrupt:
+          pushq  %r12
+          pushq  %rbp
+          pushq  %rbx
+          [...]
+          movq   hardirq_stack_ptr,%r11
+          movq   %rsp,(%r11)
+          movq   %r11,%rsp
+          [...]
+          call __common_interrupt  # rip:common_interrupt
+    
+    So frame_size(rip:common_interrupt) = 32 (3 push + ret).
+    
+    Hence "machdep->machspec->irq_eframe_link = -32;" (see x86_64_irq_eframe_link_init()).
+    
+    Now:
+    
+    asm_sysvec_apic_timer_interrupt:
+          pushq  $-0x1
+          callq  error_entry
+          movq   %rax,%rsp
+          movq   %rsp,%rdi
+          callq  sysvec_apic_timer_interrupt
+    
+    sysvec_apic_timer_interrupt:
+          pushq  %r12
+          pushq  %rbp
+          [...]
+          movq   hardirq_stack_ptr,%r11
+          movq   %rsp,(%r11)
+          movq   %r11,%rsp
+          [...]
+          call __sysvec_apic_timer_interrupt  # rip:sysvec_apic_timer_interrupt
+    
+    Here frame_size(rip:sysvec_apic_timer_interrupt) = 24 (2 push + ret)
+    
+    We should also notice that:
+    
+    rip  = *(hardirq_stack_ptr - 8)
+    rsp  = *(hardirq_stack_ptr)
+    regs = rsp - frame_size(rip)
+    
+    But x86_64_get_framesize() does not work with IRQ handlers (returns 0).
+    So not many options other than hardcoding the most likely value and
+    looking around it.  Actually x86_64_irq_eframe_link() was trying -32
+    (default), and then -40, but not -24.
+    
+    Signed-off-by: Georges Aureau <georges.aureau@hpe.com>
+
+commit ced754d3f8ce796d0d894dbb0f340e9c905c206a
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Apr 3 15:06:54 2024 +0800
+
+    Fix segmentation fault in value_search_module_6_4()
+    
+    The following segmentation fault occurred during session initialization:
+    
+      $ crash vmlinx vmcore
+      ...
+      please wait... (determining panic task)Segmentation fault
+    
+    Here is the backtrace of the crash-utility:
+    
+      (gdb) bt
+      #0  value_search_module_6_4 (value=18446603338276298752, offset=0x7ffffffface0) at symbols.c:5564
+      #1  0x0000555555812bd0 in value_to_symstr (value=18446603338276298752,
+          buf=buf@entry=0x7fffffffb9c0 "", radix=10, radix@entry=0) at symbols.c:5872
+      #2  0x00005555557694a2 in display_memory (addr=<optimized out>, count=2048, flag=208,
+          memtype=memtype@entry=1, opt=opt@entry=0x0) at memory.c:1740
+      #3  0x0000555555769e1f in raw_stack_dump (stackbase=<optimized out>, size=<optimized out>)
+          at memory.c:2194
+      #4  0x00005555557923ff in get_active_set_panic_task () at task.c:8639
+      #5  0x00005555557930d2 in get_dumpfile_panic_task () at task.c:7628
+      #6  0x00005555557a89d3 in panic_search () at task.c:7380
+      #7  get_panic_context () at task.c:6267
+      #8  task_init () at task.c:687
+      #9  0x00005555557305b3 in main_loop () at main.c:787
+      ...
+    
+    This is due to lack of existence check on module symbol table.  Not all
+    mod_mem_type will be existent for a module, e.g. in the following module
+    case:
+    
+      (gdb) p lm->symtable[0]
+      $1 = (struct syment *) 0x4dcbad0
+      (gdb) p lm->symtable[1]
+      $2 = (struct syment *) 0x4dcbb70
+      (gdb) p lm->symtable[2]
+      $3 = (struct syment *) 0x4dcbc10
+      (gdb) p lm->symtable[3]
+      $4 = (struct syment *) 0x0
+      (gdb) p lm->symtable[4]
+      $5 = (struct syment *) 0x4dcbcb0
+      (gdb) p lm->symtable[5]
+      $6 = (struct syment *) 0x4dcbd00
+      (gdb) p lm->symtable[6]
+      $7 = (struct syment *) 0x0
+    
+    MOD_RO_AFTER_INIT(3) and MOD_INIT_RODATA(6) do not exist, which should
+    be skipped, otherwise the segmentation fault will happen.
+    
+    Fixes: 7750e61fdb2a ("Support module memory layout change on Linux 6.4")
+    Closes: https://github.com/crash-utility/crash/issues/176
+    Reported-by: Naveen Chaudhary <naveenchaudhary2010@hotmail.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit ce47cb8dabb56c88e2d753026a9fdc83f83a5f5d
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Mar 19 15:59:31 2024 +0800
+
+    x86_64: Fix for "bt" command incorrectly printing "bogus exception frame" warning
+    
+    The "bogus exception frame" warning was observed again on a specific
+    vmcore, and the remaining frame was truncated on x86_64 machine, when
+    executing the "bt" command as below:
+    
+      crash> bt 0 -c 8
+      PID: 0        TASK: ffff9948c08f5640  CPU: 8    COMMAND: "swapper/8"
+       #0 [fffffe1788788e58] crash_nmi_callback at ffffffff972672bb
+       #1 [fffffe1788788e68] nmi_handle at ffffffff9722eb8e
+       #2 [fffffe1788788eb0] default_do_nmi at ffffffff97e51cd0
+       #3 [fffffe1788788ed0] exc_nmi at ffffffff97e51ee1
+       #4 [fffffe1788788ef0] end_repeat_nmi at ffffffff980015f9
+          [exception RIP: __update_load_avg_se+13]
+          RIP: ffffffff9736b16d  RSP: ffffbec3c08acc78  RFLAGS: 00000046
+          RAX: 0000000000000000  RBX: ffff994c2f2b1a40  RCX: ffffbec3c08acdc0
+          RDX: ffff9948e4fe1d80  RSI: ffff994c2f2b1a40  RDI: 0000001d7ad7d55d
+          RBP: ffffbec3c08acc88   R8: 0000001d921fca6f   R9: ffff994c2f2b1328
+          R10: 00000000fffd0010  R11: ffffffff98e060c0  R12: 0000001d7ad7d55d
+          R13: 0000000000000005  R14: ffff994c2f2b19c0  R15: 0000000000000001
+          ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+      --- <NMI exception stack> ---
+       #5 [ffffbec3c08acc78] __update_load_avg_se at ffffffff9736b16d
+       #6 [ffffbec3c08acce0] enqueue_entity at ffffffff9735c9ab
+       #7 [ffffbec3c08acd28] enqueue_task_fair at ffffffff9735cef8
+      ...
+      #18 [ffffbec3c08acf90] blk_complete_reqs at ffffffff977978d0
+      #19 [ffffbec3c08acfa0] __do_softirq at ffffffff97e66f7a
+      #20 [ffffbec3c08acff0] do_softirq at ffffffff9730f6ef
+      --- <IRQ stack> ---
+      #21 [ffffbec3c022ff18] do_idle at ffffffff97368288
+          [exception RIP: unknown or invalid address]
+          RIP: 0000000000000000  RSP: 0000000000000000  RFLAGS: 00000000
+          RAX: 0000000000000000  RBX: 000000089726a2d0  RCX: 0000000000000000
+          RDX: 0000000000000000  RSI: 0000000000000000  RDI: 0000000000000000
+          RBP: ffffffff9726a3dd   R8: 0000000000000000   R9: 0000000000000000
+          R10: ffffffff9720015a  R11: e48885e126bc1600  R12: 0000000000000000
+          R13: ffffffff973684a9  R14: 0000000000000094  R15: 0000000040000000
+          ORIG_RAX: 0000000000000000  CS: 0000  SS: 0000
+      bt: WARNING: possibly bogus exception frame
+      crash>
+    
+    Actually there is no exception frame, when called from do_softirq().
+    With the patch:
+    
+      crash> bt 0 -c 8
+      ...
+      #18 [ffffbec3c08acf90] blk_complete_reqs at ffffffff977978d0
+      #19 [ffffbec3c08acfa0] __do_softirq at ffffffff97e66f7a
+      #20 [ffffbec3c08acff0] do_softirq at ffffffff9730f6ef
+      --- <IRQ stack> ---
+      #21 [ffffbec3c022ff28] cpu_startup_entry at ffffffff973684a9
+      #22 [ffffbec3c022ff38] start_secondary at ffffffff9726a3dd
+      #23 [ffffbec3c022ff50] secondary_startup_64_no_verify at ffffffff9720015a
+      crash>
+    
+    Reported-by: Jie Li <jieli@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 5b24e363a8980dd4f878b0494cf78d24559a7a67
+Author: Aditya Gupta <adityag@linux.ibm.com>
+Date:   Fri Mar 1 12:32:54 2024 +0530
+
+    get vmalloc start address from vmcoreinfo
+    
+    Below error is noticed when running crash on vmcore collected from a linux-next
+    kernel crash (linux-next tag next-20240121):
+    
+      # crash /boot/vmlinuz-6.8.0-rc5-next-20240221 ./vmcore
+      ...
+      For help, type "help".
+      Type "apropos word" to search for commands related to "word"...
+    
+      crash: page excluded: kernel virtual address: c00000000219a2c0  type: "vmlist"
+    
+    This occured since getting the vmalloc area base address doesn't work in
+    crash now, due to 'vmap_area_list' being removed in the linux kernel
+    6.9-rc1 with below commit:
+    
+        commit 55c49fee57af99f3c663e69dedc5b85e691bbe50
+             mm/vmalloc: remove vmap_area_list
+    
+    As an alternative, the commit introduced 'VMALLOC_START' in vmcoreinfo to
+    get base address of vmalloc area, use it to return vmallow start address
+    instead of depending on vmap_area_list and vmlist.
+    
+    Reported-by: Sachin Sant <sachinp@linux.ibm.com>
+    Signed-off-by: Aditya Gupta <adityag@linux.ibm.com>
+    Tested-by: Sachin Sant <sachinp@linux.ibm.com>
+    Acked-by: Hari Bathini <hbathini@linux.ibm.com>
+
+commit 18bf18cf2e6bcd84e22c3c5a285fafbc84d0655c
+Author: Huang Shijie <shijie@os.amperecomputing.com>
+Date:   Mon Dec 18 23:01:40 2023 +0800
+
+    arm64: Add support for vmemmap symbol in vmcoreinfo
+    
+    With kernel commit d3246b6ee42a ("crash_core: export vmemmap when
+    CONFIG_SPARSEMEM_VMEMMAP is enabled") in Linux 6.9-rc1 and later, we can
+    use the vmemmap symbol in vmcoreinfo to optimize machdep->is_page_ptr.
+    vmemmap is just an array of struct page after all.
+    
+    This patch tries to:
+      1.) Get the "vmemmap" from the vmcore file.  If it's available,
+          arm64_vmemmap_is_page_ptr is set to machdep->is_page_ptr.
+      2.) Implement the fast page_to_pfn code in arm64_vmemmap_is_page_ptr.
+      3.) Dump it in "help -m".
+    
+    With the patch, "files -p" command for the inode of 441M vmlinux takes
+    only 3 seconds, while 185 seconds without the patch.
+    
+    Signed-off-by: Huang Shijie <shijie@os.amperecomputing.com>
+
+commit 3f205d1d4af5a1246bc91465bbbcee441ab79ebd
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Fri Mar 8 11:18:53 2024 +0800
+
+    LoongArch64: Fixed link errors when build on LOONGARCH64 machine
+    
+    The following link error exists when building with LOONGARCH64
+    machine:
+    
+    /usr/bin/ld: proc-service.o: in function `.LVL71':
+    proc-service.c:(.text+0x324): undefined reference to `fill_gregset ...
+    /usr/bin/ld: proc-service.o: in function `.LVL77':
+    proc-service.c:(.text+0x364): undefined reference to `supply_gregset ...
+    /usr/bin/ld: proc-service.o: in function `.LVL87':
+    proc-service.c:(.text+0x3c4): undefined reference to `fill_fpregset ...
+    /usr/bin/ld: proc-service.o: in function `.LVL93':
+    proc-service.c:(.text+0x404): undefined reference to `supply_fpregset
+    collect2: error: ld returned 1 exit status
+    
+    The cause of the error is that the definition of a function such as
+    fill_gregset is not implemented. This patch is used to fix this error.
+    
+    [ kh: added rm command for gdb files added and modified multiple times. ]
+    
+    Reported-by: Xiujie Jiang <jiangxiujie@kylinos.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit cc3049044a724969ee0b48886d4a1d66f125aefc
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Wed Mar 13 15:43:20 2024 +0900
+
+    gdb-10.2.patch: Fix duplicated code by re-applying patch
+    
+    When adding a patch to gdb-10.2.patch, a LOONGARCH64 build will fail
+    with the following redefinition errors.  There is need to remove the
+    gdb-10.2 directory before rebuilding.  It's because the patch command
+    cannot detect previously applied patches for newly created loongarch
+    files and those files get duplicated code.
+    
+      $ git am /tmp/0001-LoongArch64-Fixed-link-errors-when-build-on-LOO.patch
+      Applying: LoongArch64: Fixed link errors when build on LOONGARCH64 machine
+      $ make -j 16 warn target=LOONGARCH64
+      ...
+      patching file gdb-10.2/bfd/configure.ac
+      Reversed (or previously applied) patch detected!  Skipping patch.
+      1 out of 1 hunk ignored
+      patching file gdb-10.2/bfd/cpu-loongarch.c   <<-- cannot detect previously applied patch
+      patching file gdb-10.2/bfd/elf-bfd.h
+      patching file gdb-10.2/bfd/elf.c
+      ...
+      libtool: compile:  gcc -DHAVE_CONFIG_H -I. -DBINDIR=\"/usr/local/bin\" ...
+      cpu-loongarch.c:86:33: error: redefinition of 'bfd_loongarch32_arch'
+         static const bfd_arch_info_type bfd_loongarch32_arch =
+                                         ^~~~~~~~~~~~~~~~~~~~
+      ...
+      make: *** [Makefile:254: all] Error 2
+    
+    To fix this, change the file path of newly created files from "*.orig"
+    to "/dev/null" so that patch command can detect previously applied
+    patches.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 5977936c0a91b89e48d026867e6a2f8261ba0c2d
+Author: Edward Chron <echron@arista.com>
+Date:   Sun Jan 21 10:31:51 2024 -0800
+
+    Add "log -c" option to display printk caller id
+    
+    Add support so that dmesg entries include the optional Linux Kernel
+    debug CONFIG option PRINTK_CALLER which adds an optional dmesg field
+    that contains the Thread Id or CPU Id that is issuing the printk to
+    add the message to the kernel ring buffer. If enabled, this CONFIG
+    option makes debugging simpler as dmesg entries for a specific
+    thread or CPU can be recognized. The config option was introduced
+    with Linux 5.1 [1].
+    
+    Size of the PRINTK_CALLER field is determined by the maximum number
+    tasks that can be run on the system which is limited by the value of
+    /proc/sys/kernel/pid_max as pid values are from 0 to value - 1.
+    This value determines the number of id digits needed by the caller id.
+    The PRINTK_CALLER field is printed as T<id> for a Task Id or C<id>
+    for a CPU Id for a printk in CPU context. The values are left space
+    padded and enclosed in parentheses such as:
+             [    T123]   or   [     C16]
+    
+    Our patch adds the PRINTK_CALLER field after the timestamp if the
+    printk caller log / dmesg option (-c) is selected:
+    
+      crash> log -m -c
+      ...
+      [    0.014179] [     T1] <6>Secure boot disabled
+      [    0.014179] [    T29] <6>RAMDISK: [mem 0x3cf4f000-0x437bbfff]
+      ...
+    
+    [1] 15ff2069cb7f ("printk: Add caller information to printk() output.")
+    
+    Resolves: https://github.com/crash-utility/crash/issues/164
+    Signed-off-by: Ivan Delalande <colona@arista.com>
+    Signed-off-by: Edward Chron <echron@arista.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 3d60d9d40457239683a5f20b01437db94f964fb8
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Fri Jan 26 16:12:58 2024 +0900
+
+    Fix "mount" command failure on Linux 6.8-rc1 and later
+    
+    Kernel commit 2eea9ce4310d ("mounts: keep list of mounts in an rbtree")
+    changed the structure that keeps the list of mounts to an rbtree.
+    Without the patch, "mount" command fails with the following error:
+    
+      crash> mount
+    
+      mount: invalid structure member offset: mnt_namespace_list
+             FILE: filesys.c  LINE: 1643  FUNCTION: get_mount_list()
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit e924f6d8a1d2245c4fa55c0f5af0fbb5e29503f2
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:34 2023 +0800
+
+    LoongArch64: Add LoongArch64 architecture support information
+    
+    Add LoongArch64 architecture support information to the README and
+    help.c files.
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit c3939d2e1930677e6dad5a0e47ab1e695f54404b
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:33 2023 +0800
+
+    LoongArch64: Add "--kaslr" command line option support
+    
+    Apply initial changes to support kernel address space layout
+    randomization (KASLR) for loongarch64.  This is the minimal patch
+    required to process loongarch64 dumps for the kernels configured
+    with CONFIG_RANDOMIZE_BASE(CONFIG_RELOCATABLE), and to accept the
+    "--kaslr" command line option. Only dumpfiles whose headers contain
+    kernel VMCOREINFO data are supported.
+    
+    Example:
+    crash vmcore vmlinux --kaslr auto
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit 0f34aa46cae9876542df77113d27b14a456c7f7e
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:32 2023 +0800
+
+    LoongArch64: Add 'irq' command support
+    
+    Added support for the 'irq' series of commands in the LoongArch64
+    architecture, except for the 'irq -d' command, others can be used.
+    
+    The result of using the 'irq' command without this patch is as follows:
+    crash> irq
+     IRQ   IRQ_DESC/_DATA      IRQACTION      NAME
+     ...
+     16   9000000090423c00  9000000000f4c500
+     17   9000000090423e00  9000000000f4c500
+     18   9000000090495c00  9000000000f4c500
+     19   9000000090494a00  9000000000f4c500
+     20   9000000090496400  9000000090418480  "IPI"
+     21   9000000090496200  9000000090418500  "timer"
+     22   9000000090cb2600  9000000090d9c780  "acpi"
+     23   9000000090cb3c00      (unused)
+     24   9000000090cb1800      (unused)
+     25   9000000090cb0800  900000009117f580  "loongson_i2c"
+                            900000009117ee80  "loongson_i2c"
+                            900000009117cc00  "loongson_i2c"
+                            900000009117e800  "loongson_i2c"
+                            900000009117c780  "loongson_i2c"
+                            900000009117df00  "loongson_i2c"
+    ...
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit be214379cdb9980d61849e4bb5bac555cb165017
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:31 2023 +0800
+
+    LoongArch64: Add 'help -r' command support
+    
+    Add support form printing out the registers from the dump file. We don't
+    take the registers directly from the ELF notes but instead use the version
+    we've saved into the machine_specific structure.  If we don't do this,
+    we'd get misleading output when the number of ELF notes don't match the
+    number of online CPUs.
+    
+    E.g. Without this patch:
+    crash> help -r
+    CPU 0:
+         R0: 0000000000000000   R1: 900000000026cd2c   R2: 90000000013e8000
+         R3: 90000000013ebdf0   R4: 9000000005923878   R5: 0000000000000000
+         R6: 0000000000000001   R7: 7fffffffffffffff   R8: 0000000000000003
+         R9: 9000000094f644a8  R10: ffffffffa9059289  R11: 0000000001167617
+        R12: 0000000000000000  R13: 0000000000000002  R14: 0000000000168d9a
+        R15: 90000000017fd358  R16: 90000000013fe000  R17: 000001383a11ae73
+        R18: fffffffffffffff7  R19: 0000000000000000  R20: 0000000000000954
+        R21: 90000000002c65cc  R22: 0000000000000000  R23: 90000000014168d0
+        R24: 0000000000000000  R25: 0000000000000004  R26: 90000000014169a8
+        R27: 0000000000000004  R28: 900000000150f596  R29: 9000000001257f18
+        R30: 0000000000000000  R31: 0000000000000000
+        CSR epc : 9000000005923878    CSR badv: 9000000000221620
+        CSR crmd: 000000b0            CSR prmd: 90000000014169a8
+        CSR ecfg: 00000000           CSR estat: 90000000014168d0
+        CSR eneu: 00000004
+    ...
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit ab4c69f992ad778a23171e2a8a81e6180fabbe6b
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:30 2023 +0800
+
+    LoongArch64: Add 'help -m/M' command support
+    
+    Add loongarch64_dump_machdep_table() implementation,
+    display machdep_table.
+    
+    E.g. With this patch:
+    crash> help -m
+                  flags: 1 (KSYMS_START)
+                 kvbase: 8000000000000000
+      identity_map_base: 8000000000000000
+               pagesize: 16384
+              pageshift: 14
+               pagemask: ffffffffffffc000
+             pageoffset: 3fff
+            pgdir_shift: 36
+           ptrs_per_pgd: 2048
+           ptrs_per_pte: 2048
+              stacksize: 16384
+                     hz: 250
+                memsize: 68689920000 (0xffe3d0000)
+                   bits: 64
+             back_trace: loongarch64_back_trace_cmd()
+        processor_speed: loongarch64_processor_speed()
+    ...
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit 87f031ada9dfac6003658d2d89ede2886d92f83e
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:29 2023 +0800
+
+    LoongArch64: Add 'bt' command support
+    
+    - Add basic support for the 'bt' command.
+    - LooongArch64: Add 'bt -f' command support
+    - LoongArch64: Add 'bt -l' command support
+    
+    E.g. With this patch:
+    crash> bt
+    PID: 1832     TASK: 900000009a552100  CPU: 11   COMMAND: "bash"
+     #0 [900000009beffb60] __cpu_possible_mask at 90000000014168f0
+     #1 [900000009beffb60] __crash_kexec at 90000000002e7660
+     #2 [900000009beffcd0] panic at 9000000000f0ec28
+     #3 [900000009beffd60] sysrq_handle_crash at 9000000000a2c188
+     #4 [900000009beffd70] __handle_sysrq at 9000000000a2c85c
+     #5 [900000009beffdc0] write_sysrq_trigger at 9000000000a2ce10
+     #6 [900000009beffde0] proc_reg_write at 90000000004ce454
+     #7 [900000009beffe00] vfs_write at 900000000043e838
+     #8 [900000009beffe40] ksys_write at 900000000043eb58
+     #9 [900000009beffe80] do_syscall at 9000000000f2da54
+     #10 [900000009beffea0] handle_syscall at 9000000000221440
+    crash>
+    ...
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit 756158045183a01963f2e677786dac480453ced1
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:28 2023 +0800
+
+    LoongArch64: Add 'mach' command support
+    
+    The 'mach' command can only get some basic machine state information, such
+    as machine type, processor speed, etc.
+    
+    E.g. With this patch:
+    crash> mach
+           MACHINE TYPE: loongarch64
+            MEMORY SIZE: 64 GB
+                   CPUS: 16
+        PROCESSOR SPEED: 2200 Mhz
+                     HZ: 250
+              PAGE SIZE: 16384
+      KERNEL STACK SIZE: 16384
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit 7b8db357511c4e1a1750ab9cb7b9da8d9cb12b66
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:27 2023 +0800
+
+    LoongArch64: Add 'pte' command support
+    
+    The pte command converts the pte table entry into a physical address and
+    displays the page flags. Also fixed the pte part in the vtop command.
+    
+    E.g. With this patch:
+    ...
+    crash> vtop fffb8bf772
+    VIRTUAL           PHYSICAL
+    fffb8bf772        40000001231bf772
+    
+    SEGMENT: xuvrange
+    PAGE DIRECTORY: 9000000096d10000
+      PGD: 9000000096d10078 => 900000009665c000
+      PMD: 000000009665ffe8 => 9000000098894000
+      PTE: 0000000098897178 => 40000001231bc39f
+     PAGE: 40000001231bc000
+    
+          PTE             PHYSICAL      FLAGS
+    40000001231bc39f  40000001231bc000  (VALID|DIRTY|PLV|PRESENT|WRITE|PROTNONE|NO_EXEC)
+    
+          VMA              START             END        FLAGS FILE
+    90000000a4927660       fffb89c000       fffb8c0000 100173
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit 89ae0e226fa939457604cdeacc4dbd0f06f0b95b
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:26 2023 +0800
+
+    LoongArch64: Make the crash tool successfully enter the crash command line
+    
+    1. Add loongarch64_init() implementation, do all necessary machine-specific setup,
+    which will be called multiple times during initialization.
+    
+    2. Add the implementation of the vtop command, which is used to convert a
+    virtual address to a physical address. When entering the crash command line,
+    the corresponding symbols in the kernel will be read, and at the same time,
+    the conversion of virtual and real addresses will also be used, so the vtop
+    command is a prerequisite for entering the crash command line.
+    
+    3. Add loongarch64_get_smp_cpus() implementation, get the number of online cpus.
+    
+    4. Add loongarch64_get_page_size() implementation, get page size.
+    
+    5. Add to get processor speed. Obtain the processor speed from the kernel
+    symbol "cpu_clock_freq".
+    
+    6. Add loongarch64_verify_symbol() implementation, accept or reject a symbol from
+    the kernel namelist.
+    
+    With this patch, we can enter crash command line. Tested on Loongson-3C5000 platform.
+    
+    For help, type "help".
+    Type "apropos word" to search for commands related to "word"...
+    
+          KERNEL: /usr/lib/debug/lib/modules/5.10.0-60.103.0.130.oe2203.loongarch64/vmlinux
+        DUMPFILE: /proc/kcore
+            CPUS: 16
+            DATE: Mon Aug 21 14:33:19 CST 2023
+          UPTIME: 05:01:34
+    LOAD AVERAGE: 0.43, 0.11, 0.17
+           TASKS: 265
+        NODENAME: localhost.localdomain
+         RELEASE: 5.10.0-60.103.0.130.oe2203.loongarch64
+         VERSION: #1 SMP Fri Jul 21 12:48:08 UTC 2023
+         MACHINE: loongarch64  (2200 Mhz)
+          MEMORY: 64 GB
+             PID: 114499
+         COMMAND: "crash"
+            TASK: 900000009676ff00  [THREAD_INFO: 90000000981a8000]
+             CPU: 12
+           STATE: TASK_RUNNING (ACTIVE)
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit 35a2472e7a30871049ebb98482929c09d8b445c4
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Thu Dec 28 19:46:25 2023 +0800
+
+    Add LoongArch64 framework code support
+    
+    Mainly added some environment configurations, macro definitions, specific
+    architecture structures and some function declarations supported by the
+    LoongArch64 architecture.
+    
+    Co-developed-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Youling Tang <tangyouling@loongson.cn>
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit 28891d1127542dbb2d5ba16c575e14e741ed73ef
+Author: Tao Liu <ltao@redhat.com>
+Date:   Thu Jan 4 09:20:27 2024 +0800
+
+    symbols: skip the module if the given address is not within its address range
+    
+    Previously, to find a module symbol and its offset by an arbitrary address,
+    all symbols within the module will be iterated by address ascending order
+    until the last symbol with a smaller address been noticed.
+    
+    However if the address is not within the module address range, e.g.
+    the address is higher than the module's last symbol's address, then
+    the module can be surely skipped, because its symbol iteration is
+    unnecessary. This can speed up the kernel module symbols finding and improve
+    the overall performance.
+    
+    Without the patch:
+      $ time echo "bt 8993" | ~/crash-dev/crash vmcore vmlinux
+      crash> bt 8993
+      PID: 8993     TASK: ffff927569cc2100  CPU: 2    COMMAND: "WriterPool0"
+       #0 [ffff927569cd76f0] __schedule at ffffffffb3db78d8
+       #1 [ffff927569cd7758] schedule_preempt_disabled at ffffffffb3db8bf9
+       #2 [ffff927569cd7768] __mutex_lock_slowpath at ffffffffb3db6ca7
+       #3 [ffff927569cd77c0] mutex_lock at ffffffffb3db602f
+       #4 [ffff927569cd77d8] ucache_retrieve at ffffffffc0cf4409 [secfs2]
+       ...snip the stacktrace of the same module...
+       #11 [ffff927569cd7ba0] cskal_path_vfs_getattr_nosec at ffffffffc05cae76 [falcon_kal]
+       ...snip...
+       #13 [ffff927569cd7c40] _ZdlPv at ffffffffc086e751 [falcon_lsm_serviceable]
+       ...snip...
+       #20 [ffff927569cd7ef8] unload_network_ops_symbols at ffffffffc06f11c0 [falcon_lsm_pinned_14713]
+       #21 [ffff927569cd7f50] system_call_fastpath at ffffffffb3dc539a
+          RIP: 00007f2b28ed4023  RSP: 00007f2a45fe7f80  RFLAGS: 00000206
+          RAX: 0000000000000012  RBX: 00007f2a68302e00  RCX: 00007f2a682546d8
+          RDX: 0000000000000826  RSI: 00007eb57ea6a000  RDI: 00000000000000e3
+          RBP: 00007eb57ea6a000   R8: 0000000000000826   R9: 00000002670bdfd2
+          R10: 00000002670bdfd2  R11: 0000000000000293  R12: 00000002670bdfd2
+          R13: 00007f29d501a480  R14: 0000000000000826  R15: 00000002670bdfd2
+          ORIG_RAX: 0000000000000012  CS: 0033  SS: 002b
+      crash>
+      real  7m14.826s
+      user  7m12.502s
+      sys   0m1.091s
+    
+    With the patch:
+      $ time echo "bt 8993" | ~/crash-dev/crash vmcore vmlinux
+      crash> bt 8993
+      PID: 8993     TASK: ffff927569cc2100  CPU: 2    COMMAND: "WriterPool0"
+       #0 [ffff927569cd76f0] __schedule at ffffffffb3db78d8
+       #1 [ffff927569cd7758] schedule_preempt_disabled at ffffffffb3db8bf9
+       ...snip the same output...
+      crash>
+      real  0m8.827s
+      user  0m7.896s
+      sys   0m0.938s
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit aed1b7d3a064112d5c34eff81fa9ca0c50c5c782
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Tue Jan 16 17:00:48 2024 +0900
+
+    x86_64: Fix "bt" command not printing stack trace enough
+    
+    On recent x86_64 kernels, the check of caller function (BT_CHECK_CALLER)
+    does not work correctly due to inappropriate direct_call_targets.  As a
+    result, the correct frame is ignored and the remaining frames will be
+    truncated.
+    
+    Skip the caller check if ORC unwinder is available, as the check is not
+    necessary with it.
+    
+    Without the patch:
+      crash> bt 493113
+      PID: 493113   TASK: ff2e34ecbd3ca2c0  CPU: 27   COMMAND: "sriov_fec_daemo"
+       #0 [ff77abc4e81cfb08] __schedule at ffffffff81b239cb
+       #1 [ff77abc4e81cfb70] schedule at ffffffff81b23e2d
+       #2 [ff77abc4e81cfb88] schedule_timeout at ffffffff81b2c9e8
+          RIP: 000000000047cdbb  RSP: 000000c0000975a8  RFLAGS: 00000216
+          ...
+    
+    With the patch:
+      crash> bt 493113
+      PID: 493113   TASK: ff2e34ecbd3ca2c0  CPU: 27   COMMAND: "sriov_fec_daemo"
+       #0 [ff77abc4e81cfb08] __schedule at ffffffff81b239cb
+       #1 [ff77abc4e81cfb70] schedule at ffffffff81b23e2d
+       #2 [ff77abc4e81cfb88] schedule_timeout at ffffffff81b2c9e8
+       #3 [ff77abc4e81cfbf0] __wait_for_common at ffffffff81b24abb
+       #4 [ff77abc4e81cfc68] vfio_unregister_group_dev at ffffffffc10e76ae [vfio]
+       #5 [ff77abc4e81cfca8] vfio_pci_core_unregister_device at ffffffffc11bb599 [vfio_pci_core]
+       #6 [ff77abc4e81cfcc0] vfio_pci_remove at ffffffffc103e045 [vfio_pci]
+       #7 [ff77abc4e81cfcd0] pci_device_remove at ffffffff815d7513
+       ...
+    
+    Reported-by: Crystal Wood <crwood@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit a69496279133705f095f790a9b3425266f88b1d4
+Author: Song Shuai <songshuaishuai@tinylab.org>
+Date:   Wed Dec 13 17:45:08 2023 +0800
+
+    RISCV64: Add per-cpu overflow stacks support
+    
+    The patch introduces per-cpu overflow stacks for RISCV64 to let
+    "bt" do backtrace on it and the 'help -m' command dispalys the
+    addresss of each per-cpu overflow stack.
+    
+    TEST: a lkdtm DIRECT EXHAUST_STACK vmcore
+    
+      crash> bt
+      PID: 1        TASK: ff600000000d8000  CPU: 1    COMMAND: "sh"
+       #0 [ff6000001fc501c0] riscv_crash_save_regs at ffffffff8000a1dc
+       #1 [ff6000001fc50320] panic at ffffffff808773ec
+       #2 [ff6000001fc50380] walk_stackframe at ffffffff800056da
+           PC: ffffffff80876a34  [memset+96]
+           RA: ffffffff80563dc0  [recursive_loop+68]
+           SP: ff2000000000fd50  CAUSE: 000000000000000f
+      epc : ffffffff80876a34 ra : ffffffff80563dc0 sp : ff2000000000fd50
+       gp : ffffffff81515d38 tp : 0000000000000000 t0 : ff2000000000fd58
+       t1 : ff600000000d88c8 t2 : 6143203a6d74646b s0 : ff20000000010190
+       s1 : 0000000000000012 a0 : ff2000000000fd58 a1 : 1212121212121212
+       a2 : 0000000000000400 a3 : ff20000000010158 a4 : 0000000000000000
+       a5 : 725bedba92260900 a6 : 000000000130e0f0 a7 : 0000000000000000
+       s2 : ff2000000000fd58 s3 : ffffffff815170d8 s4 : ff20000000013e60
+       s5 : 000000000000000e s6 : ff20000000013e60 s7 : 0000000000000000
+       s8 : ff60000000861000 s9 : 00007fffc3641694 s10: 00007fffc3641690
+       s11: 00005555796ed240 t3 : 0000000000010297 t4 : ffffffff80c17810
+       t5 : ffffffff8195e7b8 t6 : ff20000000013b18
+       status: 0000000200000120 badaddr: ff2000000000fd58
+        cause: 000000000000000f orig_a0: 0000000000000000
+      --- <OVERFLOW stack> ---
+       #3 [ff2000000000fd50] memset at ffffffff80876a34
+       #4 [ff20000000010190] recursive_loop at ffffffff80563e16
+       #5 [ff200000000105d0] recursive_loop at ffffffff80563e16
+       < recursive_loop ...>
+       #16 [ff20000000013490] recursive_loop at ffffffff80563e16
+       #17 [ff200000000138d0] recursive_loop at ffffffff80563e16
+       #18 [ff20000000013d10] lkdtm_EXHAUST_STACK at ffffffff8088005e
+       #19 [ff20000000013d30] lkdtm_do_action at ffffffff80563292
+       #20 [ff20000000013d40] direct_entry at ffffffff80563474
+       #21 [ff20000000013d70] full_proxy_write at ffffffff8032fb3a
+       #22 [ff20000000013db0] vfs_write at ffffffff801d6414
+       #23 [ff20000000013e60] ksys_write at ffffffff801d67b8
+       #24 [ff20000000013eb0] __riscv_sys_write at ffffffff801d6832
+       #25 [ff20000000013ec0] do_trap_ecall_u at ffffffff80884a20
+      crash>
+    
+      crash> help -m
+      <snip>
+              irq_stack_size: 16384
+               irq_stacks[0]: ff20000000000000
+               irq_stacks[1]: ff20000000008000
+              overflow_stack_size: 4096
+               overflow_stacks[0]: ff6000001fa7a510
+               overflow_stacks[1]: ff6000001fc4f510
+      crash>
+    
+    Signed-off-by: Song Shuai <songshuaishuai@tinylab.org>
+
+commit 12fbed3280a147a40e572808b660aa838f3ca372
+Author: Song Shuai <songshuaishuai@tinylab.org>
+Date:   Wed Dec 13 17:45:07 2023 +0800
+
+    RISCV64: Add per-cpu IRQ stacks support
+    
+    This patch introduces per-cpu IRQ stacks for RISCV64 to let
+    "bt" do backtrace on it and 'bt -E' search eframes on it,
+    and the 'help -m' command displays the addresses of each
+    per-cpu IRQ stack.
+    
+    TEST: a vmcore dumped via hacking the handle_irq_event_percpu()
+    ( Why not using lkdtm INT_HW_IRQ_EN EXCEPTION ?
+      There is a deadlock[1] in crash_kexec path if use that)
+    
+      crash> bt
+      PID: 0        TASK: ffffffff8140db00  CPU: 0    COMMAND: "swapper/0"
+       #0 [ff20000000003e60] __handle_irq_event_percpu at ffffffff8006462e
+       #1 [ff20000000003ed0] handle_irq_event_percpu at ffffffff80064702
+       #2 [ff20000000003ef0] handle_irq_event at ffffffff8006477c
+       #3 [ff20000000003f20] handle_fasteoi_irq at ffffffff80068664
+       #4 [ff20000000003f50] generic_handle_domain_irq at ffffffff80063988
+       #5 [ff20000000003f60] plic_handle_irq at ffffffff8046633e
+       #6 [ff20000000003fb0] generic_handle_domain_irq at ffffffff80063988
+       #7 [ff20000000003fc0] riscv_intc_irq at ffffffff80465f8e
+       #8 [ff20000000003fd0] handle_riscv_irq at ffffffff808361e8
+           PC: ffffffff80837314  [default_idle_call+50]
+           RA: ffffffff80837310  [default_idle_call+46]
+           SP: ffffffff81403da0  CAUSE: 8000000000000009
+      epc : ffffffff80837314 ra : ffffffff80837310 sp : ffffffff81403da0
+       gp : ffffffff814ef848 tp : ffffffff8140db00 t0 : ff2000000004bb18
+       t1 : 0000000000032c73 t2 : ffffffff81200a48 s0 : ffffffff81403db0
+       s1 : 0000000000000000 a0 : 0000000000000004 a1 : 0000000000000000
+       a2 : ff6000009f1e7000 a3 : 0000000000002304 a4 : ffffffff80c1c2d8
+       a5 : 0000000000000000 a6 : ff6000001fe01958 a7 : 00002496ea89dbf1
+       s2 : ffffffff814f0220 s3 : 0000000000000001 s4 : 000000000000003f
+       s5 : ffffffff814f03d8 s6 : 0000000000000000 s7 : ffffffff814f00d0
+       s8 : ffffffff81526f10 s9 : ffffffff80c1d880 s10: 0000000000000000
+       s11: 0000000000000001 t3 : 0000000000003392 t4 : 0000000000000000
+       t5 : 0000000000000000 t6 : 0000000000000040
+       status: 0000000200000120 badaddr: 0000000000000000
+        cause: 8000000000000009 orig_a0: ffffffff80837310
+      --- <IRQ stack> ---
+       #9 [ffffffff81403da0] default_idle_call at ffffffff80837314
+       #10 [ffffffff81403db0] do_idle at ffffffff8004d0a0
+       #11 [ffffffff81403e40] cpu_startup_entry at ffffffff8004d21e
+       #12 [ffffffff81403e60] kernel_init at ffffffff8083746a
+       #13 [ffffffff81403e70] arch_post_acpi_subsys_init at ffffffff80a006d8
+       #14 [ffffffff81403e80] console_on_rootfs at ffffffff80a00c92
+      crash>
+    
+      crash> bt -E
+      CPU 0 IRQ STACK:
+      KERNEL-MODE EXCEPTION FRAME AT: ff20000000003a48
+           PC: ffffffff8006462e  [__handle_irq_event_percpu+30]
+           RA: ffffffff80064702  [handle_irq_event_percpu+18]
+           SP: ff20000000003e60  CAUSE: 000000000000000d
+      epc : ffffffff8006462e ra : ffffffff80064702 sp : ff20000000003e60
+       gp : ffffffff814ef848 tp : ffffffff8140db00 t0 : 0000000000046600
+       t1 : ffffffff80836464 t2 : ffffffff81200a48 s0 : ff20000000003ed0
+       s1 : 0000000000000000 a0 : 0000000000000000 a1 : 0000000000000118
+       a2 : 0000000000000052 a3 : 0000000000000000 a4 : 0000000000000000
+       a5 : 0000000000010001 a6 : ff6000001fe01958 a7 : 00002496ea89dbf1
+       s2 : ff60000000941ab0 s3 : ffffffff814a0658 s4 : ff60000000089230
+       s5 : ffffffff814a0518 s6 : ffffffff814a0620 s7 : ffffffff80e5f0f8
+       s8 : ffffffff80fc50b0 s9 : ffffffff80c1d880 s10: 0000000000000000
+       s11: 0000000000000001 t3 : 0000000000003392 t4 : 0000000000000000
+       t5 : 0000000000000000 t6 : 0000000000000040
+       status: 0000000200000100 badaddr: 0000000000000078
+        cause: 000000000000000d orig_a0: ff20000000003ea0
+    
+      CPU 1 IRQ STACK: (none found)
+    
+      crash>
+    
+      crash> help -m
+      <snip>
+                 machspec: ced1e0
+              irq_stack_size: 16384
+               irq_stacks[0]: ff20000000000000
+               irq_stacks[1]: ff20000000008000
+      crash>
+    
+    [1]: https://lore.kernel.org/linux-riscv/20231208111015.173237-1-songshuaishuai@tinylab.org/
+    
+    Signed-off-by: Song Shuai <songshuaishuai@tinylab.org>
+
+commit d86dc6901ce76a0fc29022ed448a4baa83a47dd7
+Author: Song Shuai <songshuaishuai@tinylab.org>
+Date:   Wed Dec 13 17:45:06 2023 +0800
+
+    RISCV64: Add support for 'bt -e' option
+    
+    With this patch we can search the stack for possible kernel and user
+    mode exception frames via 'bt -e' command.
+    
+    TEST: a lkdtm DIRECT EXCEPTION vmcore
+    
+      crash> bt -e
+      PID: 1        TASK: ff600000000e0000  CPU: 1    COMMAND: "sh"
+    
+      KERNEL-MODE EXCEPTION FRAME AT: ff200000000138d8
+           PC: ffffffff805303c0  [lkdtm_EXCEPTION+6]
+           RA: ffffffff8052fe36  [lkdtm_do_action+16]
+           SP: ff20000000013cf0  CAUSE: 000000000000000f
+      epc : ffffffff805303c0 ra : ffffffff8052fe36 sp : ff20000000013cf0
+       gp : ffffffff814ef848 tp : ff600000000e0000 t0 : 6500000000000000
+       t1 : 000000000000006c t2 : 6550203a6d74646b s0 : ff20000000013d00
+       s1 : 000000000000000a a0 : ffffffff814aef40 a1 : c0000000ffffefff
+       a2 : 0000000000000010 a3 : 0000000000000001 a4 : 5d53ea10ca096e00
+       a5 : ffffffff805303ba a6 : 0000000000000008 a7 : 0000000000000038
+       s2 : ff60000001324000 s3 : ffffffff814aef40 s4 : ff20000000013e30
+       s5 : 000000000000000a s6 : ff20000000013e30 s7 : ff600000000ce000
+       s8 : 0000555560f0f8a8 s9 : 00007ffff497f6b4 s10: 00007ffff497f6b0
+       s11: 0000555560fa30e0 t3 : ffffffff81502197 t4 : ffffffff81502197
+       t5 : ffffffff81502198 t6 : ff20000000013b28
+       status: 0000000200000120 badaddr: 0000000000000000
+        cause: 000000000000000f orig_a0: 0000000000000000
+    
+      USER-MODE EXCEPTION FRAME AT: ff20000000013ee0
+           PC: 007fff8780431aff   RA: 007fff877b168400   SP: 007ffff497f5b000
+           ORIG_A0: 0000000000000100   SYSCALLNO: 0000000000004000
+      epc : 007fff8780431aff ra : 007fff877b168400 sp : 007ffff497f5b000
+       gp : 00555560f5134800 tp : 007fff8774378000 t0 : 0000000000100000
+       t1 : 00555560e427bc00 t2 : 0000000000271000 s0 : 007ffff497f5e000
+       s1 : 0000000000000a00 a0 : 0000000000000100 a1 : 00555560faa68000
+       a2 : 0000000000000a00 a3 : 4000000000000000 a4 : 20000000000000a8
+       a5 : 0000000000000054 a6 : 0000000000000400 a7 : 0000000000004000
+       s2 : 00555560faa68000 s3 : 007fff878b33f800 s4 : 0000000000000a00
+       s5 : 00555560faa68000 s6 : 0000000000000a00 s7 : 00555560f5131400
+       s8 : 00555560f0f8a800 s9 : 007ffff497f6b400 s10: 007ffff497f6b000
+       s11: 00555560fa30e000 t3 : 007fff877af1fe00 t4 : 00555560fa6f2000
+       t5 : 0000000000000100 t6 : 9e1fea5bf8683300
+       status: 00000200004020b9 badaddr: 0000000000000000
+        cause: 0000000000000800 orig_a0: 0000000000000100
+      crash>
+    
+    Signed-off-by: Song Shuai <songshuaishuai@tinylab.org>
+
+commit edb2bd52885ccc2fbe3e0825efe0ac55951a7710
+Author: qiwu.chen@transsion.com <qiwu.chen@transsion.com>
+Date:   Fri Dec 22 03:30:33 2023 +0000
+
+    arm64: support HW Tag-Based KASAN (MTE) mode
+    
+    Kernel commit 2e903b914797 ("kasan, arm64: implement HW_TAGS runtime")
+    introduced Hardware Tag-Based KASAN (MTE) mode for ARMv8.5 and later
+    CPUs, which uses the Top Byte Ignore (TBI) feature of arm64 CPUs to
+    store a pointer tag in the top byte of kernel pointers.
+    
+    Currently, crash utility cannot load MTE ramdump due to access invalid
+    HW Tag-Based kernel virtual addresses. Here's the example error message:
+    
+      please wait... (gathering kmem slab cache data)
+      crash: invalid kernel virtual address: f1ffff80c000201c  type: "kmem_cache objsize/object_size"
+      please wait... (gathering task table data)
+      crash: invalid kernel virtual address: f9ffff8239c2cde0  type: "xa_node shift"
+    
+    This patch replaces the orignal generic_is_kvaddr() with arm64_is_kvaddr(),
+    which checks the validity for a HW Tag-Based kvaddr. mte_tag_reset() is
+    used to convert a Tag-Based kvaddr to untaggged kvaddr in arm64_VTOP()
+    and arm64_IS_VMALLOC_ADDR().
+    
+    Signed-off-by: chenqiwu <qiwu.chen@transsion.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 53d2577cef98b76b122aade94349637a11e06138
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Dec 26 09:19:28 2023 +0800
+
+    x86_64: check bt->bptr before calculate framesize
+    
+    Previously the value of bt->bptr is not checked, which may led to a
+    wrong prev_sp and framesize. As a result, bt->stackbuf[] will be
+    accessed out of range, and segfault.
+    
+    Before:
+      crash> set debug 1
+      crash> bt
+      ...snip...
+      --- <NMI exception stack> ---
+       #8 [ffffffff9a603e10] __switch_to_asm at ffffffff99800214
+      rsp: ffffffff9a603e10 textaddr: ffffffff99800214 -> spo: 0 bpo: 0 spr: 0 bpr: 0 type: 0 end: 0
+       #9 [ffffffff9a603e40] __schedule at ffffffff9960dfb1
+      rsp: ffffffff9a603e40 textaddr: ffffffff9960dfb1 -> spo: 16 bpo: -16 spr: 4 bpr: 1 type: 0 end: 0
+      rsp: ffffffff9a603e40 rbp: ffffb9ca076e7ca8 prev_sp: ffffb9ca076e7cb8 framesize: 1829650024
+      Segmentation fault (core dumped)
+    
+      (gdb) p/x bt->stackbase
+      $1 = 0xffffffff9a600000
+      (gdb) p/x bt->stacktop
+      $2 = 0xffffffff9a604000
+    
+    After:
+      crash> set debug 1
+      crash> bt
+      ...snip...
+      --- <NMI exception stack> ---
+       #8 [ffffffff9a603e10] __switch_to_asm at ffffffff99800214
+      rsp: ffffffff9a603e10 textaddr: ffffffff99800214 -> spo: 0 bpo: 0 spr: 0 bpr: 0 type: 0 end: 0
+       #9 [ffffffff9a603e40] __schedule at ffffffff9960dfb1
+      rsp: ffffffff9a603e40 textaddr: ffffffff9960dfb1 -> spo: 16 bpo: -16 spr: 4 bpr: 1 type: 0 end: 0
+       #10 [ffffffff9a603e98] schedule_idle at ffffffff9960e87c
+      rsp: ffffffff9a603e98 textaddr: ffffffff9960e87c -> spo: 8 bpo: 0 spr: 5 bpr: 0 type: 0 end: 0
+      rsp: ffffffff9a603e98 prev_sp: ffffffff9a603ea8 framesize: 0
+      ...snip...
+    
+    Check bt->bptr value before calculate framesize. Only bt->bptr within
+    the range of bt->stackbase and bt->stacktop will be regarded as valid.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 38435c3acec075b076353ca28f557a0dfe1341c3
+Author: Li Zhijian <lizhijian@fujitsu.com>
+Date:   Fri Dec 15 10:44:21 2023 +0800
+
+    help.c: Remove "kmem -l" help messages
+    
+    "kmem -l" option has existed when crash git project initialization, but
+    its help message was not accurate (extra arguments a|i|ic|id was missing).
+    
+    In addition, those symbols required by the -l option were for very old
+    kernels, at least 2.6 kernels don't contain them.  Also, this option has
+    not been fixed for a long time.
+    
+    Instead of document this option, hide it from help messages.
+    
+    Signed-off-by: Li Zhijian <lizhijian@fujitsu.com>
+
+commit 19d3c56c9fca9dea49dced0414becc6d1b12e9fc
+Author: Huang Shijie <shijie@os.amperecomputing.com>
+Date:   Thu Dec 14 15:15:20 2023 +0800
+
+    arm64: rewrite the arm64_get_vmcoreinfo_ul to arm64_get_vmcoreinfo
+    
+    Rewrite the arm64_get_vmcoreinfo_ul to arm64_get_vmcoreinfo,
+    add a new parameter "base" for it.
+    
+    Also use it to simplify the arm64 code.
+    
+    Signed-off-by: Huang Shijie <shijie@os.amperecomputing.com>
+
+commit 9b69093e623f1d54c373b1e091900d40576c059b
+Author: Song Shuai <songshuaishuai@tinylab.org>
+Date:   Tue Dec 12 18:20:51 2023 +0800
+
+    RISCV64: Fix 'bt' output when no ra on the stack top
+    
+    Same as the Linux commit f766f77a74f5 ("riscv/stacktrace: Fix
+    stack output without ra on the stack top").
+    
+    When a function doesn't have a callee, then it will not
+    push ra into the stack, such as lkdtm functions, so
+    correct the FP of the second frame and use pt_regs to get
+    the right PC of the second frame.
+    
+    Before this patch, the `bt -f` outputs only the first frame with
+    the wrong PC and FP of next frame:
+    ```
+    crash> bt -f
+    PID: 1        TASK: ff600000000e0000  CPU: 1    COMMAND: "sh"
+     #0 [ff20000000013cf0] lkdtm_EXCEPTION at ffffffff805303c0
+        [PC: ffffffff805303c0 RA: ff20000000013d10 SP: ff20000000013cf0 SIZE: 16] <- wrong next PC
+        ff20000000013cf0: 0000000000000001 ff20000000013d10 <- next FP
+        ff20000000013d00: ff20000000013d40
+    crash>
+    ```
+    After this patch, the `bt` outputs the full frames:
+    ```
+    crash> bt
+    PID: 1        TASK: ff600000000e0000  CPU: 1    COMMAND: "sh"
+     #0 [ff20000000013cf0] lkdtm_EXCEPTION at ffffffff805303c0
+     #1 [ff20000000013d00] lkdtm_do_action at ffffffff8052fe36
+     #2 [ff20000000013d10] direct_entry at ffffffff80530018
+     #3 [ff20000000013d40] full_proxy_write at ffffffff80305044
+     #4 [ff20000000013d80] vfs_write at ffffffff801b68b4
+     #5 [ff20000000013e30] ksys_write at ffffffff801b6c4a
+     #6 [ff20000000013e80] __riscv_sys_write at ffffffff801b6cc4
+     #7 [ff20000000013e90] do_trap_ecall_u at ffffffff80836798
+    crash>
+    ```
+    
+    Acked-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+    Signed-off-by: Song Shuai <songshuaishuai@tinylab.org>
+
+commit 5187a0320cc54a9cb8b326cf012e69795950a716
+Author: Song Shuai <songshuaishuai@tinylab.org>
+Date:   Tue Dec 12 18:20:50 2023 +0800
+
+    RISCV64: Dump NT_PRSTATUS in 'help -n'
+    
+    With the patch we can get full dump of "struct elf_prstatus" in 'help -n':
+    ```
+    crash> help -n
+    <snip>
+    Elf64_Nhdr:
+                   n_namesz: 5 ("CORE")
+                   n_descsz: 376
+                     n_type: 1 (NT_PRSTATUS)
+                             si.signo: 0  si.code: 0  si.errno: 0
+                             cursig: 0  sigpend: 0  sighold: 0
+                             pid: 1  ppid: 0  pgrp: 0  sid:0
+                             utime: 0.000000  stime: 0.000000
+                             cutime: 0.000000  cstime: 0.000000
+                             epc: ffffffff8000a1dc   ra: ffffffff800af958   sp: ff6000001fc501c0
+                              gp: ffffffff81515d38   tp: ff600000000d8000   t0: 6666666666663c5b
+                              t1: ff600000000d88c8   t2: 666666666666663c   s0: ff6000001fc50320
+                              s1: ffffffff815170d8   a0: ff6000001fc501c8   a1: c0000000ffffefff
+                              a2: 0000000000000000   a3: 0000000000000001   a4: 0000000000000000
+                              a5: ff60000001782c00   a6: 000000000130e0f0   a7: 0000000000000000
+                              s2: ffffffff81517820   s3: ff6000001fc501c8   s4: 000000000000000f
+                              s5: 0000000000000000   s6: ff20000000013e60   s7: 0000000000000000
+                              s8: ff60000000861000   s9: 00007fffc3641694  s10: 00007fffc3641690
+                             s11: 00005555796ed240   t3: 0000000000010297   t4: ffffffff80c17810
+                              t5: ffffffff8195e7b8   t6: ff6000001fc50048
+                             0000000000000000 0000000000000000
+                             0000000000000000 0000000000000000
+                             0000000000000001 0000000000000000
+                             0000000000000000 0000000000000000
+                             0000000000000000 0000000000000000
+                             0000000000000000 0000000000000000
+                             0000000000000000 0000000000000000
+                             ffffffff8000a1dc ffffffff800af958
+                             ff6000001fc501c0 ffffffff81515d38
+                             ff600000000d8000 6666666666663c5b
+    <snip>
+    ```
+    
+    Signed-off-by: Song Shuai <songshuaishuai@tinylab.org>
+
+commit d0164e7e480ad2ffd3fe73fe53c46087e5e137a6
+Author: Alexander Gordeev <agordeev@linux.ibm.com>
+Date:   Thu Dec 7 16:54:06 2023 +0100
+
+    s390x: uncouple physical and virtual memory spaces
+    
+    Rework VTOP and PTOV macros to reflect the future
+    uncoupling of physical and virtual address spaces
+    in kernel. Existing versions are not affected.
+    
+    Signed-off-by: Alexander Gordeev <agordeev@linux.ibm.com>
+
+commit 4c78eb4a9199631fe94845cb3fbd6376aae1251d
+Author: Alexander Gordeev <agordeev@linux.ibm.com>
+Date:   Wed Nov 29 13:47:35 2023 +0100
+
+    s390x: fix virtual vs physical address confusion
+    
+    Physical and virtual addresses are the same on S390X.
+    That led to missing to use PTOV and VTOP macros where
+    they actually expected.
+    
+    Signed-off-by: Alexander Gordeev <agordeev@linux.ibm.com>
+
+commit 2e513114e7d77fadc88011f186ef943ccf397d35
+Author: Alexander Gordeev <agordeev@linux.ibm.com>
+Date:   Wed Nov 29 13:47:34 2023 +0100
+
+    Fix identity_map_base value dump on S390
+    
+    Kernel virtual base instead of identity base is printed
+    
+    Signed-off-by: Alexander Gordeev <agordeev@linux.ibm.com>
+
+commit c15da07526291a5c357010cb4aaf4bde6151e642
+Author: Johan Erlandsson <johan.erlandsson@sony.com>
+Date:   Wed Apr 19 11:26:04 2023 +0200
+
+    use NR_SWAPCACHE when nr_swapper_spaces isn't available
+    
+    In 5.12 the following change was introduced:
+    b6038942480e ("mm: memcg: add swapcache stat for memcg v2")
+    
+    Then the variable 'nr_swapper_spaces' is not read (unless
+    CONFIG_DEBUG_VM=y).  In GKI builds this variable is then optimized
+    out. But the same change provided a new way to obtain the same
+    information, using NR_SWAPCACHE.
+    
+    Reported-by: xueguolun <xueguolun@xiaomi.com>
+    Signed-off-by: Johan Erlandsson <johan.erlandsson@sony.com>
+
+commit 0c5ef6a4a3a2759915ffe72b1366dce2f32f65c5
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Nov 14 16:32:07 2023 +0800
+
+    symbols: skip load .init.* sections if module was successfully initialized
+    
+    There might be address overlap of one modules .init.text symbols and
+    another modules .text symbols. As a result, gdb fails to translate the
+    address to symbol name correctly:
+    
+      crash> sym -m virtio_blk | grep MODULE
+      ffffffffc00a4000 MODULE START: virtio_blk
+      ffffffffc00a86ec MODULE END: virtio_blk
+      crash> gdb info address floppy_module_init
+      Symbol "floppy_module_init" is a function at address 0xffffffffc00a4131.
+    
+    Since the .init.* sections of a module had been freed by kernel if the
+    module was initialized successfully, there is no need to load the .init.*
+    sections data from "*.ko.debug" in gdb to create such an overlap.
+    lm->mod_init_module_ptr is used as a flag of whether module is freed.
+    
+    Without the patch:
+      crash> mod -S
+      crash> struct blk_mq_ops 0xffffffffc00a7160
+      struct blk_mq_ops {
+        queue_rq = 0xffffffffc00a45b0 <floppy_module_init+1151>, <-- translated from module floppy
+        map_queue = 0xffffffff813015c0 <blk_mq_map_queue>,
+        ...snip...
+        complete = 0xffffffffc00a4370 <floppy_module_init+575>,
+        init_request = 0xffffffffc00a4260 <floppy_module_init+303>,
+        ...snip...
+      }
+    
+    With the patch:
+      crash> mod -S
+      crash> struct blk_mq_ops 0xffffffffc00a7160
+      struct blk_mq_ops {
+        queue_rq = 0xffffffffc00a45b0 <virtio_queue_rq>, <-- translated from module virtio_blk
+        map_queue = 0xffffffff813015c0 <blk_mq_map_queue>,
+        ...snip...
+        complete = 0xffffffffc00a4370 <virtblk_request_done>,
+        init_request = 0xffffffffc00a4260 <virtblk_init_request>,
+        ...snip...
+      }
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit f2ee6fa6c841ddc37ba665909dafbc7294c34d64
+Author: Tao Liu <ltao@redhat.com>
+Date:   Fri Nov 17 15:52:19 2023 +0800
+
+    symbols: expand all kernel module symtable if not all expanded previously
+    
+    There is an issue that, for kernel modules, "dis -rl" fails to display
+    modules code line number data after execute "bt" command in crash.
+    
+    Without the patch:
+      crsah> mod -S
+      crash> bt
+      PID: 1500     TASK: ff2bd8b093524000  CPU: 16   COMMAND: "lpfc_worker_0"
+       #0 [ff2c9f725c39f9e0] machine_kexec at ffffffff8e0686d3
+       ...snip...
+       #8 [ff2c9f725c39fcc0] __lpfc_sli_release_iocbq_s4 at ffffffffc0f2f425 [lpfc]
+       ...snip...
+      crash> dis -rl ffffffffc0f60f82
+      0xffffffffc0f60eb0 <lpfc_nlp_get>:      nopl   0x0(%rax,%rax,1) [FTRACE NOP]
+      0xffffffffc0f60eb5 <lpfc_nlp_get+5>:    push   %rbp
+      0xffffffffc0f60eb6 <lpfc_nlp_get+6>:    push   %rbx
+      0xffffffffc0f60eb7 <lpfc_nlp_get+7>:    test   %rdi,%rdi
+    
+    With the patch:
+      crash> mod -S
+      crash> bt
+      PID: 1500     TASK: ff2bd8b093524000  CPU: 16   COMMAND: "lpfc_worker_0"
+       #0 [ff2c9f725c39f9e0] machine_kexec at ffffffff8e0686d3
+       ...snip...
+       #8 [ff2c9f725c39fcc0] __lpfc_sli_release_iocbq_s4 at ffffffffc0f2f425 [lpfc]
+       ...snip...
+      crash> dis -rl ffffffffc0f60f82
+      /usr/src/debug/kernel-4.18.0-425.13.1.el8_7/linux-4.18.0-425.13.1.el8_7.x86_64/drivers/scsi/lpfc/lpfc_hbadisc.c: 6756
+      0xffffffffc0f60eb0 <lpfc_nlp_get>:      nopl   0x0(%rax,%rax,1) [FTRACE NOP]
+      /usr/src/debug/kernel-4.18.0-425.13.1.el8_7/linux-4.18.0-425.13.1.el8_7.x86_64/drivers/scsi/lpfc/lpfc_hbadisc.c: 6759
+      0xffffffffc0f60eb5 <lpfc_nlp_get+5>:    push   %rbp
+    
+    The root cause is, after kernel module been loaded by mod command, the symtable
+    is not expanded in gdb side. crash bt or dis command will trigger such an
+    expansion. However the symtable expansion is different for the 2 commands:
+    
+    The stack trace of "dis -rl" for symtable expanding:
+    
+      #0  0x00000000008d8d9f in add_compunit_symtab_to_objfile ...
+      #1  0x00000000006d3293 in buildsym_compunit::end_symtab_with_blockvector ...
+      #2  0x00000000006d336a in buildsym_compunit::end_symtab_from_static_block ...
+      #3  0x000000000077e8e9 in process_full_comp_unit ...
+      #4  process_queue ...
+      #5  dw2_do_instantiate_symtab ...
+      #6  0x000000000077ed67 in dw2_instantiate_symtab ...
+      #7  0x000000000077f75e in dw2_expand_all_symtabs ...
+      #8  0x00000000008f254d in gdb_get_line_number ...
+      #9  0x00000000008f22af in gdb_command_funnel_1 ...
+      #10 0x00000000008f2003 in gdb_command_funnel ...
+      #11 0x00000000005b7f02 in gdb_interface ...
+      #12 0x00000000005f5bd8 in get_line_number ...
+      #13 0x000000000059e574 in cmd_dis ...
+    
+    The stack trace of "bt" for symtable expanding:
+    
+      #0  0x00000000008d8d9f in add_compunit_symtab_to_objfile ...
+      #1  0x00000000006d3293 in buildsym_compunit::end_symtab_with_blockvector ...
+      #2  0x00000000006d336a in buildsym_compunit::end_symtab_from_static_block ...
+      #3  0x000000000077e8e9 in process_full_comp_unit ...
+      #4  process_queue ...
+      #5  dw2_do_instantiate_symtab ...
+      #6  0x000000000077ed67 in dw2_instantiate_symtab ...
+      #7  0x000000000077f8ed in dw2_lookup_symbol ...
+      #8  0x00000000008e6d03 in lookup_symbol_via_quick_fns ...
+      #9  0x00000000008e7153 in lookup_symbol_in_objfile ...
+      #10 0x00000000008e73c6 in lookup_symbol_global_or_static_iterator_cb ...
+      #11 0x00000000008b99c4 in svr4_iterate_over_objfiles_in_search_order ...
+      #12 0x00000000008e754e in lookup_global_or_static_symbol ...
+      #13 0x00000000008e75da in lookup_static_symbol ...
+      #14 0x00000000008e632c in lookup_symbol_aux ...
+      #15 0x00000000008e5a7a in lookup_symbol_in_language ...
+      #16 0x00000000008e5b30 in lookup_symbol ...
+      #17 0x00000000008f2a4a in gdb_get_datatype ...
+      #18 0x00000000008f22c0 in gdb_command_funnel_1 ...
+      #19 0x00000000008f2003 in gdb_command_funnel ...
+      #20 0x00000000005b7f02 in gdb_interface ...
+      #21 0x00000000005f8a9f in datatype_info ...
+      #22 0x0000000000599947 in cpu_map_size ...
+      #23 0x00000000005a975d in get_cpus_online ...
+      #24 0x0000000000637a8b in diskdump_get_prstatus_percpu ...
+      #25 0x000000000062f0e4 in get_netdump_regs_x86_64 ...
+      #26 0x000000000059fe68 in back_trace ...
+      #27 0x00000000005ab1cb in cmd_bt ...
+    
+    For the stacktrace of "dis -rl", it calls dw2_expand_all_symtabs() to expand
+    all symtable of the objfile, or "*.ko.debug" in our case. However for
+    the stacktrace of "bt", it doesn't expand all, but only a subset of symtable
+    which is enough to find a symbol by dw2_lookup_symbol(). As a result, the
+    objfile->compunit_symtabs, which is the head of a single linked list of
+    struct compunit_symtab, is not NULL but didn't contain all symtables. It
+    will not be reinitialized in gdb_get_line_number() by "dis -rl" because
+    !objfile_has_full_symbols(objfile) check will fail, so it cannot display
+    the proper code line number data.
+    
+    Since objfile_has_full_symbols(objfile) check cannot ensure all symbols
+    been expanded, this patch add a new member as a flag for struct objfile
+    to record if all symbols have been expanded. The flag will be set only ofter
+    expand_all_symtabs been called.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 582febffa8b3567339148c2bb916fc70f2fc546e
+Author: Johan Erlandsson <johan.erlandsson@sony.com>
+Date:   Fri Oct 20 19:10:52 2023 +0200
+
+    zram: Fixes for lookup_swap_cache()
+    
+    Fix the following three issues:
+    (1) swap cache missing page tree offset
+        The radix or xarray start at an offset inside struct address_space.
+    (2) swap cache entries are pointer to struct page
+        The entries in radix, xarray (swap cache) are address to struct page.
+    (3) exclude shadow entries from swap cache lookup
+        radix or xarray can contain shadow entries from previous page
+        entries. These should be ignored when looking for a page pointer.
+    
+    Without the patch,
+    - lookup_swap_cache() returns NULL since do_xarray() call returns FALSE,
+    - in try_zram_decompress(), since 'entry' is NULL, page is filled with 0,
+        if (!entry || (flags & ZRAM_FLAG_SAME_BIT)) {
+    and pages in swap cache will be seen to be a 'zero' page.
+    
+    Signed-off-by: Johan Erlandsson <johan.erlandsson@sony.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit d65e5d3eae0dd06a5308a5cb00c05fee60594093
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Mon Nov 20 13:22:56 2023 +0900
+
+    Fix typos in offset_table and missing "help -o" items
+    
+    A few of zram related members in the offset_table have typos and
+    irregular naming rule, also they are not present in the "help -o"
+    output.  Let's fix these.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 38acd02c7fc09843ffb10fc2d695cccdd10cc7f6
+Author: Chengen Du <chengen.du@canonical.com>
+Date:   Fri Nov 17 11:45:33 2023 +0800
+
+    Fix "rd" command for zram data display in Linux 6.2 and later
+    
+    Kernel commit 7ac07a26dea7 ("zram: preparation for multi-zcomp support")
+    replaced "compressor" member with "comp_algs" in the zram struct.
+    Without the patch, the "rd" command can triggers the following error:
+    
+      rd: WARNING: Some pages are swapped out to zram. Please run mod -s zram.
+      rd: invalid user virtual address: ffff7d23f010  type: "64-bit UVADDR"
+    
+    Related kernel commit:
+      84b33bf78889 ("zram: introduce recompress sysfs knob")
+    
+    Signed-off-by: Chengen Du <chengen.du@canonical.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 61c8fdb1d7f747430705bce860736baa3c6edd6c
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Mon Nov 27 14:30:19 2023 +0900
+
+    Mark start of 8.0.5 development phase with version 8.0.4++
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
