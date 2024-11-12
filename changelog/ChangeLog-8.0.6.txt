@@ -1,0 +1,1346 @@
+commit f13853cef53f5c5463a51021edbc81977e2b1405
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Nov 12 09:31:04 2024 +0800
+
+    crash-8.0.5 -> crash-8.0.6
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit db0077614aaeda6d0ed557f2b91d3349d5fe430f
+Author: Austin Kim <austindh.kim@gmail.com>
+Date:   Tue Oct 29 17:32:07 2024 +0900
+
+    Fix for 'sys' to properly display the PANIC message
+    
+    Using 'sys' command, we can view the panic message with general system
+    information. If we run RISCV64-based vmcore, PANIC message is not properly
+    displayed.
+    
+    The reason is that the string "Unable to handle kernel" is not
+    completely matched with the panic_msg[]. The corresponding kernel commit
+    is 21733cb518471.
+    
+    Without the patch:
+      crash> sys
+            KERNEL: vmlinux  [TAINTED]
+          DUMPFILE: vmcore
+              CPUS: 4
+              DATE: Thu Aug 22 16:13:08 KST 2024
+            UPTIME: 00:33:25
+      LOAD AVERAGE: 0.07, 0.07, 0.02
+             TASKS: 385
+          NODENAME: starfive
+           RELEASE: 6.6.20+
+           VERSION: #13 SMP Mon Aug 19 12:58:52 KST 2024
+           MACHINE: riscv64  (unknown Mhz)
+            MEMORY: 4 GB
+             PANIC: ""
+    
+    With the patch:
+      crash> sys
+            KERNEL: vmlinux  [TAINTED]
+          DUMPFILE: vmcore
+              CPUS: 4
+              DATE: Thu Aug 22 16:13:08 KST 2024
+            UPTIME: 00:33:25
+      LOAD AVERAGE: 0.07, 0.07, 0.02
+             TASKS: 385
+          NODENAME: starfive
+           RELEASE: 6.6.20+
+           VERSION: #13 SMP Mon Aug 19 12:58:52 KST 2024
+           MACHINE: riscv64  (unknown Mhz)
+            MEMORY: 4 GB
+             PANIC: "Unable to handle kernel access to user memory without uaccess routines at virtual address 0000000000000000"
+    
+    Signed-off-by: Austin Kim <austindh.kim@gmail.com>
+
+commit ca74157283dd43d0036ab6b7b9380300728a7e97
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Nov 5 15:59:32 2024 +1300
+
+    Doc: add doc to state that the --log option is deprecated
+    
+    Since kernel(>=v5.10), a new lockless ringbuffer is introduced. And
+    crash commit a5531b24 ("printk: add support for lockless ringbuffer")
+    implemented the lockless ringbuffer dumping for cmd_log, this however,
+    relies on the existence of kernel debuginfo.
+    
+    Since there is already a similar function been implemented for
+    makedumpfile, aka "makedumpfile --dump-dmesg" to dump dmesg logs with
+    only vmcore, there is no need to maintain a similar code in crash
+    as well. In addition, this option is not widely used, so just state the
+    "--log" option is deprecated.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 968debd0d5979dd9ddca3af0766bad714dbd51e3
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Sep 4 19:49:40 2024 +1200
+
+    arm64: Add gdb stack unwind support
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 89ff1e45734457eb66905ef656775fcfd1b46aec
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Sep 4 19:49:38 2024 +1200
+
+    x86_64: Add gdb stack unwind support
+    
+    This is a similar technical path with ppc64 implementation(see ppc64.c),
+    a different case is, need to handle inactive_task_frame structure,
+    specifically in x86 64.
+    
+    If inactive_task_frame structure enabled, for inactive tasks, 7 regs can
+    be get from inactive_task_frame in stack, and sp need to rewind back to
+    skip inactive_task_frame structure (See code comments in
+    x86_64.c:x86_64_get_current_task_reg()); for active tasks, we get regs by
+    the original way.
+    
+    If inactive_task_frame structure is not enabled, for inactive tasks, the
+    stack frame is organized as linked list, and sp/bp can be get from stack;
+    for active tasks, we get regs by the original way.
+    
+    vmware_vmss_get_cpu_reg() whould be called only for active tasks
+    to get their registers from corresponding CPUs.
+    
+    Otherwise, the standard path of fetching pt_regs from the memory
+    (inactive_task_frame) should be used.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+    Signed-off-by: Alexey Makhalov <alexey.makhalov@broadcom.com>
+
+commit 6dfda0d2235574cf80530ea92e0ddff270f9c039
+Author: Aditya Gupta <adityag@linux.ibm.com>
+Date:   Wed Sep 4 19:49:37 2024 +1200
+
+    ppc64: Add gdb stack unwind support
+    
+    Currently, gdb passthroughs of 'bt', 'frame', 'up', 'down', 'info
+    locals' don't work. This is due to gdb not knowing the register values to
+    unwind the stack frames
+    
+    Every gdb passthrough goes through `gdb_interface`. And then, gdb expects
+    `crash_target::fetch_registers` to give it the register values, which is
+    dependent on `machdep->get_current_task_reg` to read the register values for
+    specific architecture.
+    
+                                          ----------------------------
+               gdb passthrough (eg. "bt") |                          |
+       crash   -------------------------> |                          |
+                                          |      gdb_interface       |
+                                          |                          |
+                                          |                          |
+                                          |  ----------------------  |
+                     fetch_registers      |  |                    |  |
+    crash_target<-------------------------+--|        gdb         |  |
+                --------------------------+->|                    |  |
+                  Registers (SP,NIP, etc.)|  |                    |  |
+                                          |  |                    |  |
+                                          |  ----------------------  |
+                                          ----------------------------
+    
+    Implement `machdep->get_current_task_reg` on PPC64, so that crash provides the
+    register values to gdb to unwind stack frames properly
+    
+    With these changes, on powerpc, 'bt' command output in gdb mode, will look
+    like this:
+    
+        gdb> bt
+        #0  0xc0000000002a53e8 in crash_setup_regs (oldregs=<optimized out>, newregs=0xc00000000486f8d8) at ./arch/powerpc/include/asm/kexec.h:69
+        #1  __crash_kexec (regs=<optimized out>) at kernel/kexec_core.c:974
+        #2  0xc000000000168918 in panic (fmt=<optimized out>) at kernel/panic.c:358
+        #3  0xc000000000b735f8 in sysrq_handle_crash (key=<optimized out>) at drivers/tty/sysrq.c:155
+        #4  0xc000000000b742cc in __handle_sysrq (key=key@entry=99, check_mask=check_mask@entry=false) at drivers/tty/sysrq.c:602
+        #5  0xc000000000b7506c in write_sysrq_trigger (file=<optimized out>, buf=<optimized out>, count=2, ppos=<optimized out>) at drivers/tty/sysrq.c:1163
+        #6  0xc00000000069a7bc in pde_write (ppos=<optimized out>, count=<optimized out>, buf=<optimized out>, file=<optimized out>, pde=0xc000000009ed3a80) at fs/proc/inode.c:340
+        #7  proc_reg_write (file=<optimized out>, buf=<optimized out>, count=<optimized out>, ppos=<optimized out>) at fs/proc/inode.c:352
+        #8  0xc0000000005b3bbc in vfs_write (file=file@entry=0xc00000009dda7d00, buf=buf@entry=0xebcfc7c6040 <error: Cannot access memory at address 0xebcfc7c6040>, count=count@entry=2, pos=pos@entry=0xc00000000486fda0) at fs/read_write.c:582
+    
+    instead of earlier output without this patch:
+    
+        gdb> bt
+        #0  <unavailable> in ?? ()
+        Backtrace stopped: previous frame identical to this frame (corrupt stack?)
+    
+    Also, 'get_dumpfile_regs' has been introduced to get registers from
+    multiple supported vmcore formats. Correspondingly a flag 'BT_NO_PRINT_REGS'
+    has been introduced to tell helper functions to get registers, to not
+    print registers with every call to backtrace in gdb.
+    
+    Note: This feature to support GDB unwinding doesn't support live debugging
+    
+    [lijiang: squash these five patches(see the Link) into one patch]
+    
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01084.html
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01083.html
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01089.html
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01090.html
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01091.html
+    Co-developed-by:: Tao Liu <ltao@redhat.com>
+    Signed-off-by: Aditya Gupta <adityag@linux.ibm.com>
+
+commit 1fd80c623c205443fdd2a29b14c5230a09984147
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Sep 4 19:49:31 2024 +1200
+
+    Preparing for gdb stack unwind support
+    
+    There are 3 designs for supporting arbitrary tasks stack unwinding:
+      1) One gdb thread represent a task[1][2].
+      2) One gdb thread represent a cpu[3].
+      3) Leaving only one gdb thread[4].
+    
+    1 & 2 have a flaw that, when there are lots of tasks/cpus, it will slow
+    the startup of crash, introduce complexity of the registers context
+    synchronization between crash and gdb, hard to cover live debug mode
+    etc. So here we used the 3rd design.
+    
+    Related discussions:
+      [1]: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg00524.html
+      [2]: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg00529.html
+      [3]: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg00471.html
+      [4]: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg00541.html
+    
+    To switch task, or view arbitrary tasks stack unwinding, we will reuse
+    the current gdb thread, and load the target task's regcache to the
+    thread. This will simplify many code.
+    
+    Note: this will change the behavior of "info threads" and "thread x", E.g:
+    
+    Before:
+      crash> gdb thread
+      [Current thread is 1 (CPU 0)]
+      crash> info threads
+        Id   Target Id         Frame
+      * 1    CPU 0             <unavailable> in ?? ()
+        2    CPU 1             <unavailable> in ?? ()
+        3    CPU 2             <unavailable> in ?? ()
+        ...
+      crash> thread 2
+      [Switching to thread 2 (CPU 1)]
+       #0  <unavailable> in ?? ()
+    
+    After:
+      crash> gdb thread
+      [Current thread is 1 (10715 bash)]
+      crash> info threads
+        Id   Target Id         Frame
+      * 1    10715 bash        0xc0000000002bde04 in crash_setup_regs ...
+      crash> thread 2
+      gdb: gdb request failed: thread 2
+    
+    As a result, the "info threads" and "thread x" will be less useful. We
+    will extend cmd "set" later to implement a similar function. E.g:
+    
+      crash> set <pid|task>
+    
+    Then the task context of crash and gdb will both be switched to
+    pid/task, so the following command: "bt" "gdb bt" will output
+    the same task context.
+    
+    [lijiang: squash these four patches(see the Link) into one patch]
+    
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01085.html
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01087.html
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01086.html
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01088.html
+    Co-developed-by: Aditya Gupta <adityag@linux.ibm.com>
+    Co-developed-by: Alexey Makhalov <alexey.makhalov@broadcom.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 7c8a7dddda66b3d1043ba99516de57691033154a
+Author: Alexey Makhalov <alexey.makhalov@broadcom.com>
+Date:   Wed Sep 4 19:49:39 2024 +1200
+
+    vmware_guestdump: Various format versions support
+    
+    There are several versions of debug.guest format. Current version of
+    the code is able to parse only version 4.
+    
+    Improve parser to support other known versions. Split data structures
+    on sub-structures and introduce a helper functions to calculate a gap
+    between them based on the version number. Implement additional data
+    structure (struct mainmeminfo_old) and logic specifically for original
+    (version 1) format support.
+    
+    Signed-off-by: Alexey Makhalov <alexey.makhalov@broadcom.com>
+
+commit c4db469af091edd1ea0897fbce41bc175375314b
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Sep 4 19:49:28 2024 +1200
+
+    x86_64: Fix invalid input "=>" for bt command
+    
+    There may be extra "=>" prefix before gdb disassembly, as a result,
+    parse_line() will return string "=>" as arglist[0], which will be
+    converted to number by htol() and fails. E.g.:
+    
+    crash> gdb x/40i __list_del_entry
+       ...
+       0xffffffff8133c384 <__list_del_entry+36>:    cmp    %rcx,%rax
+       0xffffffff8133c387 <__list_del_entry+39>:    je     0xffffffff8133c403 <__list_del_entry+163>
+    => 0xffffffff8133c389 <__list_del_entry+41>:    mov    (%rax),%r8
+       0xffffffff8133c38c <__list_del_entry+44>:    cmp    %r8,%rdi
+       0xffffffff8133c38f <__list_del_entry+47>:    jne    0xffffffff8133c3e4 <__list_del_entry+132>
+       0xffffffff8133c391 <__list_del_entry+49>:    mov    0x8(%rdx),%r8
+    
+    Before the patch:
+    
+    crash> bt
+     ...
+     #10 [ffff880095647c00] async_page_fault at ffffffff816a8638
+        [exception RIP: __list_del_entry+41]
+        RIP: ffffffff8133c389  RSP: ffff880095647cb0  RFLAGS: 00010207
+        RAX: 0000000000000000  RBX: ffffea0400408020  RCX: dead000000000200
+        RDX: 0000000000000000  RSI: 0000000000000246  RDI: ffffea0400408020
+        RBP: ffff880095647cb0   R8: 0000000080000431   R9: ffffffff81e835c0
+        R10: 0000000000000000  R11: 0000000000000400  R12: ffff880138795b58
+        R13: 0000000010010201  R14: ffff880095647d70  R15: 0000000400408040
+        ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+     bt: invalid input: "=>"
+     #11 [ffff880095647cb8] list_del at ffffffff8133c43d
+     #12 [ffff880095647cd0] devm_memremap_pages at ffffffff81180c53
+    
+    After the patch:
+    
+    No string as 'bt: invalid input: "=>"' of output.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 21e0a345f97324b3472d573ed20ef098f0300fac
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Sep 4 19:49:27 2024 +1200
+
+    Fix cpumask_t recursive dependence issue
+    
+    There is recursive dependence for cpumask_t and will exhause the stack,
+    see the following stack trace:
+    
+    (gdb) bt
+     ...snip...
+     #61965 0x00000000005de98c in datatype_info (name=name@entry=0xa5b1fd "cpumask_t", member=member@entry=0x0, dm=dm@entry=0xfffffffffffffffc) at symbols.c:6694
+     #61966 0x000000000057e4ea in cpu_map_size ...
+     #61967 0x000000000058e7bd in get_cpus_online ...
+     #61968 0x000000000061fa4b in diskdump_get_prstatus_percpu ...
+     #61969 0x0000000000616d74 in get_netdump_regs_x86_64 ...
+     #61970 0x0000000000585290 in get_dumpfile_regs ...
+     #61971 0x00000000005b7a3c in x86_64_get_current_task_reg ...
+     #61972 0x0000000000650389 in crash_target::fetch_registers ...
+     #61973 0x00000000008f385a in target_fetch_registers ...
+     #61974 0x000000000086ecda in regcache::raw_update ...
+     #61975 regcache::raw_update ...
+     #61976 0x000000000086ed7a in readable_regcache::raw_read ...
+     #61977 0x000000000086f063 in readable_regcache::cooked_read_value ...
+     #61978 0x000000000089c4ee in sentinel_frame_prev_register ...
+     #61979 0x0000000000786c76 in frame_unwind_register_value ...
+     #61980 0x0000000000786f18 in frame_register_unwind ...
+     #61981 0x0000000000787267 in frame_unwind_register ...
+     #61982 0x00000000007ad9b0 in i386_unwind_pc ...
+     #61983 0x00000000007866c0 in frame_unwind_pc ...
+     #61984 0x000000000078679c in get_frame_pc ...
+     #61985 get_frame_address_in_block ...
+     #61986 0x0000000000786849 in get_frame_address_in_block_if_available ...
+     #61987 0x0000000000691466 in get_frame_block ...
+     #61988 0x00000000008b9430 in get_selected_block ...
+     #61989 0x000000000084f8f2 in parse_exp_in_context ...
+     #61990 0x000000000084f9e5 in parse_exp_1 ...
+     #61991 parse_expression ...
+     #61992 0x00000000008d44da in gdb_get_datatype ...
+     #61993 gdb_command_funnel_1 ...
+     #61994 0x00000000008d48ae in gdb_command_funnel ...
+     #61995 0x000000000059cc42 in gdb_interface ...
+     #61996 0x00000000005de98c in datatype_info (name=name@entry=0xa5b1fd "cpumask_t", member=member@entry=0x0, dm=dm@entry=0xfffffffffffffffc) at symbols.c:6694
+     #61997 0x000000000057e4ea in cpu_map_size ...
+     #61998 0x000000000058e7bd in get_cpus_online () ...
+     #61999 0x000000000061fa4b in diskdump_get_prstatus_percpu ...
+     #62000 0x0000000000616d74 in get_netdump_regs_x86_64 ...
+     #62001 0x0000000000585290 in get_dumpfile_regs ...
+     #62002 0x00000000005b7a3c in x86_64_get_current_task_reg ...
+     #62003 0x0000000000650389 in crash_target::fetch_registers ...
+    
+    The cpumask_t will be recursively evaluated. This patch will
+    fix the bug.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 32b03ca26229bf587652952e0ca348354c5dffc5
+Author: chenguanyou <chenguanyou@xiaomi.com>
+Date:   Fri Aug 30 09:51:11 2024 +0800
+
+    Revert "arm64: section_size_bits compatible with macro definitions"
+    
+    This reverts commit 568c6f049ad4a20918afeb2db9bb7a15b17d9ff2.
+    
+    This commit was introduced for the compatibility of android kernel
+    due to its customization, however it shouldn't be applied in the
+    first because upstream kernel won't need this and the compatibility
+    patch should go into respective downstream crash instead. So make
+    this clean up.
+    
+    Before:
+    crash vmcore vmlinux -d1
+    ...
+    utsname:
+         release: 4.14.180-perf-g4483caa8ae80-dirty
+         machine: aarch64
+    ...
+    SECTION_SIZE_BITS: 27
+    ...
+    
+    After:
+    crash vmcore vmlinux -d1
+    ...
+    xtime timespec.tv_sec: 603549d0: Wed Feb 24 02:30:40 CST 2021
+    utsname:
+         release: 4.14.180-perf-g4483caa8ae80-dirty
+         machine: aarch64
+    ...
+    SECTION_SIZE_BITS: 30
+    ...
+    
+    Signed-off-by: chenguanyou <chenguanyou@xiaomi.com>
+
+commit 7b5c8bca7d05b72b252756ff9023f342ddf87b31
+Author: Li XingYang <1127955419@qq.com>
+Date:   Sun Sep 22 01:00:29 2024 +0800
+
+    X86 64: improve the method of determining whether kaslr is enabled
+    
+    The recent commit 6752571d8d78 fixed the issue that crash tool may fail
+    to load due to kernel commit 223b5e57d0d5 ("mm/execmem, arch: convert
+    remaining overrides of module_alloc to execmem"), but it do not work in
+    the following two situations:
+    
+    [1] Kernel enables KASAN
+    [2] The kernel set CONFIG_RANDOMIZE_BASE but not set CONFIG_RANDOMIZE_MEMORY
+    
+    After loading fails with an error:
+    crash: seek error: kernel virtual address: ffffffff826bb418  type: "page_offset_base"
+    
+    In both cases, kaslr_regions will not be exported in /proc/kallsyms, but
+    kaslr_get_random_long will still be exported in /proc/kallsyms. So use
+    kaslr_get_random_long instead of kaslr_degions to determine whether
+    kaslr is enabled.
+    
+    Signed-off-by: Li XingYang <1127955419@qq.com>
+    Signed-off-by: Zach Wade <zachwade.k@gmail.com>
+
+commit 9babe985a7eb001ec398a3734c1aee853a12668f
+Author: qiwu.chen@transsion.com <qiwu.chen@transsion.com>
+Date:   Fri Sep 20 01:28:32 2024 +0000
+
+    kmem: fix the determination for slab page
+    
+    The determination for a slab page has changed due to changing
+    PG_slab from a page flag to a page type since kernel commit
+    46df8e73a4a3.
+    
+    Without the patch:
+    crash> kmem -s ffff000002aa4100
+    kmem: address is not allocated in slab subsystem: ffff000002aa4100
+    
+    With the patch:
+    crash> kmem -s ffff000002aa4100
+    CACHE             OBJSIZE  ALLOCATED     TOTAL  SLABS  SSIZE  NAME
+    ffff00000140f900     4096         94       126     18    32k  task_struct
+      SLAB              MEMORY            NODE  TOTAL  ALLOCATED  FREE
+      fffffdffc00aa800  ffff000002aa0000     0      7          5     2
+      FREE / [ALLOCATED]
+      [ffff000002aa4100]
+    
+    Signed-off-by: qiwu.chen <qiwu.chen@transsion.com>
+
+commit 0d2ad774532db3c4dad6cda05d51db74d0e3fa86
+Author: Tao Liu <ltao@redhat.com>
+Date:   Mon Sep 16 19:44:58 2024 +1200
+
+    x86_64: Fix the bug of getting incorrect framesize
+    
+    Previously, "retq" is used to determine the end of a function, so the end
+    of framesize calculation. However "ret" might be outputted by gdb rather
+    than "retq", as a result, the framesize is returned incorrectly, and bogus
+    stack trace will be outputted.
+    
+    Without the patch:
+    
+       $ crash -d 3 vmcore vmlinux
+       crash> bt
+       0xffffffff92da7545 <copy_process+5>: push   %rbp     [framesize: 8]
+       ...
+       0xffffffff92da7561 <copy_process+33>:        sub    $0x238,%rsp      [framesize: 624]
+       ...
+       0xffffffff92da776a <copy_process+554>:       pop    %r15     [framesize: 8]
+       0xffffffff92da776c <copy_process+556>:       pop    %rbp     [framesize: 0]
+       0xffffffff92da776d <copy_process+557>:       ret
+    
+       crash> bt -D dump
+       framesize_cache_entries:
+          ...
+          [  3]: ffffffff92dadcbd 0 CF (copy_process+26493)
+    
+       crash> bt
+       ...
+       #9  [ffff888263157bc0] copy_process at ffffffff92dadcbd
+       #10 [ffff888263157d20] __mutex_init at ffffffff92ed8dd5
+       #11 [ffff888263157d38] __alloc_file at ffffffff93458397
+       #12 [ffff888263157d60] alloc_empty_file at ffffffff934585d2
+       #13 [ffff888263157da8] __alloc_fd at ffffffff934b5ead
+       #14 [ffff888263157e38] _do_fork at ffffffff92dae7a1
+       #15 [ffff888263157f28] do_syscall_64 at ffffffff92c085f4
+    
+    Stack #10 ~ #13 are bogus and misleading.
+    
+    With the patch:
+       ...
+       0xffffffff92da776d <copy_process+557>:       ret     [framesize restored to: 624]
+    
+       crash> bt -D dump
+          ...
+          [  3]: ffffffff92dadcbd 624 CF (copy_process+26493)
+    
+       crash> bt
+       ...
+       #9  [ffff888263157bc0] copy_process at ffffffff92dadcbd
+       #10 [ffff888263157e38] _do_fork at ffffffff92dae7a1
+       #11 [ffff888263157f28] do_syscall_64 at ffffffff92c085f4
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 17248cf002767ba6d81e9b60affb9b76fb81d06f
+Author: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+Date:   Tue Sep 3 15:51:29 2024 +0800
+
+    arm64: Support 16K page, 48 VA bits and 4 level page table
+    
+    Add 16K page, 48 VA bits and 4 level page table support.
+    
+    Signed-off-by: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+
+commit 19ce5a996ce78fdec889606564a35e6569a86ad3
+Author: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+Date:   Tue Sep 3 15:51:28 2024 +0800
+
+    arm64: fix 64K page and 52-bits VA support
+    
+    Kernel commit ebd9aea1f27e ("arm64: head: drop idmap_ptrs_per_pgd") has
+    removed the "idmap_ptrs_per_pgd" since Linux v6.0-rc1, which caused the
+    following error:
+    
+    crash: invalid kernel virtual address: ffff800083700000 type: "64-bit KVADDR"
+    
+    Crash tool can not get the value of ptrs_per_pgd by reading
+    "idmap_ptrs_per_pgd", let's use VA_BITS to get its value.
+    
+    Signed-off-by: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+
+commit 3b8f9721e13d8619af1158d42ec38a6796b4c9c6
+Author: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+Date:   Tue Sep 3 15:51:27 2024 +0800
+
+    arm64: use the same expression to indicate ptrs_per_pgd
+    
+    1. Use the same expression to indicate ptrs_per_pgd.
+    2. Add VA bits indication.
+    
+    Signed-off-by: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+
+commit 2ebf656a4a17520f93110af9705dc1e81832d405
+Author: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+Date:   Tue Sep 3 15:51:26 2024 +0800
+
+    arm64: fix indent issue and refactor PTE_TO_PHYS
+    
+    1. Fix indent issue.
+    2. Use PTE_TO_PHYS() to translate PTE to physical address instead of
+       using open-coded to mask.
+    
+    Signed-off-by: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+
+commit f20a94016148dce397cded5b4ac02c5e33646c99
+Author: Aureau, Georges (Kernel Tools ERT) <georges.aureau@hpe.com>
+Date:   Thu Aug 29 09:15:36 2024 +0000
+
+    “kmem address” not working properly when redzone is enabled
+    
+    When "slub_debug" is enabled with redzoning, "kmem address" does not
+    work properly. The "red_left_pad" member within "struct kmem_cache" is
+    currently an "unsigned int", it used to be an "int", but it never was a
+    "long", hence "red_left_pad" in do_slab_slub() was not initialized
+    properly. This "red_left_pad" issue resulted in reporting free objects
+    as "[ALLOCATED]", and in reporting bogus object address when using "set
+    redzone off".
+    
+    Signed-off-by: Georges Aureau <georges.aureau@hpe.com>
+
+commit 79b93ecb2e72ec211918c07b0a857b11a18726fc
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Thu Aug 15 16:12:46 2024 +0800
+
+    Fix a "Bus error" issue caused by 'crash --osrelease' or crash loading
+    
+    Sometimes, in production environment, there are still some vmcores that
+    are incomplete, such as partial header or the data is corrupted. When
+    crash tool attempts to parse such vmcores, it may fail as below:
+    
+      $ ./crash --osrelease vmcore
+      Bus error (core dumped)
+    
+    or
+    
+      $ crash vmlinux vmcore
+      ...
+      Bus error (core dumped)
+     $
+    
+    Gdb calltrace:
+    
+      $ gdb /home/lijiang/src/crash/crash /tmp/core.126301
+      Core was generated by `./crash --osrelease /home/lijiang/src/39317/vmcore'.
+      Program terminated with signal SIGBUS, Bus error.
+      #0  __memcpy_evex_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:831
+      831             LOAD_ONE_SET((%rsi), PAGE_SIZE, %VMM(4), %VMM(5), %VMM(6), %VMM(7))
+      (gdb) bt
+      #0  __memcpy_evex_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:831
+      #1  0x0000000000651096 in read_dump_header (file=0x7ffc59ddff5f "/home/lijiang/src/39317/vmcore") at diskdump.c:820
+      #2  0x0000000000651cf3 in is_diskdump (file=0x7ffc59ddff5f "/home/lijiang/src/39317/vmcore") at diskdump.c:1042
+      #3  0x0000000000502ac9 in get_osrelease (dumpfile=0x7ffc59ddff5f "/home/lijiang/src/39317/vmcore") at main.c:1938
+      #4  0x00000000004fb2e8 in main (argc=3, argv=0x7ffc59dde3a8) at main.c:271
+      (gdb) frame 1
+      #1  0x0000000000651096 in read_dump_header (file=0x7ffc59ddff5f "/home/lijiang/src/39317/vmcore") at diskdump.c:820
+      820                   memcpy(dd->dumpable_bitmap, dd->bitmap + bitmap_len/2,
+    
+    This may happen on attempting access to a page of the buffer that lies
+    beyond the end of the mapped file(see the mmap() man page).
+    
+    Let's add a check to avoid such issues as much as possible, but still
+    not guarantee that it can work well in any extreme situation.
+    
+    Fixes: a3344239743b ("diskdump: use mmap/madvise to improve the start-up")
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit af3d266aeb8c18c5e41d0a72694f4dce88754396
+Author: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+Date:   Fri Aug 16 11:30:22 2024 +0800
+
+    arm64: cleanup the pud description
+    
+    Currently, crash tool only supports 4-level page table translation for
+    4K page, thus we can use page table level flag to determine if the pud
+    table is used or not. This will make 'help -m/-M' work properly.
+    
+    Signed-off-by: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+
+commit f93d870f8b6ad79cb84694d8e3226cb8c3f54c3e
+Author: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+Date:   Fri Aug 16 11:30:21 2024 +0800
+
+    arm64: fix for 'help -m/-M' to correctly display the pmd description
+    
+    When using 2-level page table translation, the pmd table is not used, so
+    mark it as 'not used' to ensure the 'help -m/-M' works well.
+    
+    Signed-off-by: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+
+commit bcdf0f798d01dcc9c92be3c1e027e35629463b13
+Author: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+Date:   Fri Aug 16 11:30:20 2024 +0800
+
+    arm64: Introduction of support for 16K page with 2-level table support
+    
+    Introduction of ARM64 support for 16K page size with 2-level page
+    table and 36 VA bits.
+    
+    Signed-off-by: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+
+commit 5218919ec108bac0132b20fe18cf4aae9e30a6c6
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Aug 14 18:34:57 2024 +1200
+
+    s390x: Fix "bt -f/-F" command fail with seek error
+    
+    Kernel commit ce3dc447493ff ("s390: add support for virtually mapped
+    kernel stacks") renamed "panic_task" to "nodat_stack" in the struct
+    lowcore, which leads a wrong stack base/top calculation. As a result,
+    the "bt -f/-F" may fail with the seek error:
+    
+      crash> bt -f
+      PID: 3359     TASK: 28b01a09400       CPU: 0    COMMAND: "runtest.sh"
+       LOWCORE INFO:
+        ...
+        -general registers:
+           0x0000000034dd9140 0x0000039600000002
+           0x00000396cad7dfa0 0x0000028b03ba5000
+        ...
+          0000028c6e9fffd8:  0000000000000000 0000000000000000
+          0000028c6e9fffe8:  0000000000000000 0000000000000000
+          0000028c6e9ffff8:  0000000000000000bt: seek error: kernel virtual
+          address: 28c6ea00000  type: "readmem_ul"
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 321e1e85458876248c65149ed690130952ec8042
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Aug 14 11:25:24 2024 +1200
+
+    Fix a segfault issue due to the incorrect irq_stack_size on ARM64
+    
+    See the following stack trace:
+    (gdb) bt
+     #0  0x00005635ac2b166b in arm64_unwind_frame (frame=0x7ffdaf35cb70,
+         bt=0x7ffdaf35d430) at arm64.c:2821
+     #1  arm64_back_trace_cmd (bt=0x7ffdaf35d430) at arm64.c:3306
+     #2  0x00005635ac27b108 in back_trace (bt=bt@entry=0x7ffdaf35d430) at
+         kernel.c:3239
+     #3  0x00005635ac2880ae in cmd_bt () at kernel.c:2863
+     #4  0x00005635ac1f16dc in exec_command () at main.c:893
+     #5  0x00005635ac1f192a in main_loop () at main.c:840
+     #6  0x00005635ac50df81 in captured_main (data=<optimized out>) at main.c:1284
+     #7  gdb_main (args=<optimized out>) at main.c:1313
+     #8  0x00005635ac50e000 in gdb_main_entry (argc=<optimized out>,
+         argv=<optimized out>) at main.c:1338
+     #9  0x00005635ac1ea2a5 in main (argc=5, argv=0x7ffdaf35dde8) at main.c:721
+    
+    The issue may be encountered when thread_union symbol not found in vmlinux
+    due to compiling optimization.
+    
+    This patch will try the following 2 methods to get the irq_stack_size
+    when thread_union symbol unavailable:
+    
+    1. change the thread_shift when KASAN is enabled and with vmcoreinfo.
+       In arm64/include/asm/memory.h:
+    
+       #if defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KASAN_SW_TAGS)
+       ...
+       #define IRQ_STACK_SIZE               THREAD_SIZE
+    
+       Since enabling the KASAN will affect the final value,
+       this patch reset IRQ_STACK_SIZE according to the calculation process in
+       kernel code.
+    
+    2. Try getting the value from kernel code disassembly, to get
+       THREAD_SHIFT directly from tbnz instruction.
+    
+       In arch/arm64/kernel/entry.S:
+       .macro kernel_ventry, el:req, ht:req, regsize:req, label:req
+       ...
+             add     sp, sp, x0
+             sub     x0, sp, x0
+             tbnz    x0, #THREAD_SHIFT, 0f
+    
+       $ gdb vmlinux
+       (gdb) disass vectors
+       Dump of assembler code for function vectors:
+          ...
+          0xffff800080010804 <+4>:     add     sp, sp, x0
+          0xffff800080010808 <+8>:     sub     x0, sp, x0
+          0xffff80008001080c <+12>:    tbnz    w0, #16, 0xffff80008001081c <vectors+28>
+    
+    Signed-off-by: yeping.zheng <yeping.zheng@nio.com>
+    Improved-by: Tao Liu <ltao@redhat.com>
+
+commit 5cd1c6ace5fe41f3e007669d9bc549e168f8441e
+Author: qiwu.chen <qiwu.chen@transsion.com>
+Date:   Sun Jul 28 14:21:58 2024 +0000
+
+    arm64: fix the determination of vmemmap and struct_page_size
+    
+    Currently, the vmemmap ptr addr is determined by the vmcoreinfo of
+    "SYMBOL(vmemmap)", which leads to an invalid vmemmap addr showed by
+    "help -m" for dump files without the vmcoreinfo. The value of
+    vmemmap_end is simply set to -1 for available VA_BITS_ACTUAL case in
+    arm64_calc_virtual_memory_ranges(), and the struct_page_size value is 0.
+    
+      crash> help -m |grep vmem
+               vmemmap_vaddr: fffffffeffe00000
+                 vmemmap_end: ffffffffffffffff
+                     vmemmap: 0000000000000000
+      crash> help -m |grep struct_page_size
+            struct_page_size: 0
+    
+    Introduce arm64_get_vmemmap_page_ptr() to fix the determination of
+    vmemmap ptr addr, and fix the determination of vmemmap_end and
+    struct_page_size in arm64_calc_virtual_memory_ranges().
+    
+      crash> help -m |grep vmem
+               vmemmap_vaddr: fffffffeffe00000
+                 vmemmap_end: ffffffffffe00000
+                     vmemmap: fffffffefee00000
+      crash> help -m |grep struct_page_size
+            struct_page_size: 64
+    
+    Signed-off-by: qiwu.chen <qiwu.chen@transsion.com>
+
+commit f615f8fab7bf3d2d5d5cb00518124a06e6846be4
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Jul 17 16:17:00 2024 +1200
+
+    Fix "irq -a" exceeding the memory range issue
+    
+    Previously without the patch, there was an error observed as follows:
+    
+      crash> irq -a
+      IRQ NAME                 AFFINITY
+        0 timer                0-191
+        4 ttyS0                0-23,96-119
+      ...
+       84 smartpqi             72-73,168
+      irq: page excluded: kernel virtual address: ffff97d03ffff000  type: "irq_desc affinity"
+    
+    The reason is the reading of irq affinity exceeded the memory range, see
+    the following debug info:
+    
+      Thread 1 "crash" hit Breakpoint 1, generic_get_irq_affinity (irq=85) at kernel.c:7373
+      7375          irq_desc_addr = get_irq_desc_addr(irq);
+      (gdb) p/x irq_desc_addr
+      $1 = 0xffff97d03f21e800
+    
+      crash> struct irq_desc 0xffff97d03f21e800
+      struct irq_desc {
+        irq_common_data = {
+          state_use_accessors = 425755136,
+          node = 3,
+          handler_data = 0x0,
+          msi_desc = 0xffff97ca51b83480,
+          affinity = 0xffff97d03fffee60,
+          effective_affinity = 0xffff97d03fffe6c0
+        },
+    
+      crash> whatis cpumask_t
+      typedef struct cpumask {
+          unsigned long bits[128];
+      } cpumask_t;
+      SIZE: 1024
+    
+    In order to get the affinity, crash will read the memory range 0xffff97d03fffee60
+    ~ 0xffff97d03fffee60 + 1024(0x400) by line:
+    
+            readmem(affinity_ptr, KVADDR, affinity, len,
+                    "irq_desc affinity", FAULT_ON_ERROR);
+    
+    However the reading will exceed the effective memory range:
+    
+      crash> kmem 0xffff97d03fffee60
+      CACHE             OBJSIZE  ALLOCATED     TOTAL  SLABS  SSIZE  NAME
+      ffff97c900044400       32     123297    162944   1273     4k  kmalloc-32
+        SLAB              MEMORY            NODE  TOTAL  ALLOCATED  FREE
+        fffffca460ffff80  ffff97d03fffe000     3    128         81    47
+        FREE / [ALLOCATED]
+        [ffff97d03fffee60]
+    
+            PAGE        PHYSICAL      MAPPING       INDEX CNT FLAGS
+      fffffca460ffff80 83fffe000 dead000000000001 ffff97d03fffe340  1 d7ffffe0000800 slab
+    
+      crash> kmem ffff97d03ffff000
+            PAGE        PHYSICAL      MAPPING       INDEX CNT FLAGS
+      fffffca460ffffc0 83ffff000                0        0  1 d7ffffe0004000 reserved
+    
+      crash> dmesg
+      ...
+      [    0.000000] BIOS-e820: [mem 0x00000000fe000000-0x00000000fe00ffff] reserved
+      [    0.000000] BIOS-e820: [mem 0x0000000100000000-0x000000083fffefff] usable
+      [    0.000000] BIOS-e820: [mem 0x000000083ffff000-0x000000083fffffff] reserved
+      ...
+    
+    The beginning physical address, aka 0x83fffe000, is located in the usable
+    area and is readable, however the later physical address, starting from
+    0x83ffff000, is located in reserved region and not readable. In fact,
+    the affinity member is allocated by alloc_cpumask_var_node(), for the 192 CPUs
+    system, the allocated size is only 24, and we can see it is within
+    the kmalloc-32 slab. So it is incorrect to read 1024 length(given by
+    STRUCT_SIZE("cpumask_t")), only 24 is enough.
+    
+    Since there are plenty of places in crash which takes the value of
+    STRUCT_SIZE("cpumask_t"), and works fine for the past, this patch will
+    not modify them all, only the one which encountered this issue(hunk in
+    kernel.c), and the one with the same DIV_ROUND_UP() (hunk in tools.c).
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 38f26cc8b9304e79e7f8adb5fd8e6a533c70cfd2
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Aug 6 14:31:45 2024 +0800
+
+    LoongArch64: fix incorrect code in the main()
+    
+    The commit c3939d2e1930 contains incorrect code that starts with "+",
+    for example:
+    -        !machine_type("S390X") && !machine_type("RISCV64"))
+    +        !machine_type("S390X") && !machine_type("RISCV64") &&
+    ++       !machine_type("LOONGARCH64"))
+    
+    See the main() in the main.c
+    ...
+             } else if (STREQ(long_options[option_index].name, "kaslr")) {
+                 if (!machine_type("X86_64") &&
+                     !machine_type("ARM64") && !machine_type("X86") &&
+                     !machine_type("S390X") && !machine_type("RISCV64") &&
+    +                !machine_type("LOONGARCH64"))
+    
+    Let's remove it from the main().
+    
+    Link: https://lists.crash-utility.osci.io/archives/list/devel@lists.crash-utility.osci.io/message/LH3IRUA6ZDVFZFLWKW5EWR3DKE6MY25Z/
+    Fixes: c3939d2e1930 ("LoongArch64: Add "--kaslr" command line option support")
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 93d7f647c45b80b584db815f78b7130508642c60
+Author: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+Date:   Sat Jul 13 21:22:52 2024 +0800
+
+    arm64: Introduction of support for 16K page with 3-level table support
+    
+    Introduction of ARM64 support for 16K page size with 3-level page
+    table and 47 VA bits.
+    
+    Signed-off-by: Kuan-Ying Lee <kuan-ying.lee@canonical.com>
+
+commit 1c6da3eaff820708d4286324051d153a01766b02
+Author: bevis_chen <bevis_chen@asus.com>
+Date:   Thu Jul 25 09:38:59 2024 +0800
+
+    arm64: Fix bt command show wrong stacktrace on ramdump source
+    
+    For ramdump(Qcom phone device) case with the kernel option
+    CONFIG_ARM64_PTR_AUTH_KERNEL enabled, the bt command may print
+    incorrect stacktrace as below:
+    
+      crash> bt 16930
+      PID: 16930    TASK: ffffff89b3eada00  CPU: 2    COMMAND: "Firebase Backgr"
+       #0 [ffffffc034c437f0] __switch_to at ffffffe0036832d4
+       #1 [ffffffc034c43850] __kvm_nvhe_$d.2314 at 6be732e004cf05a0
+       #2 [ffffffc034c438b0] __kvm_nvhe_$d.2314 at 86c54c6004ceff80
+       #3 [ffffffc034c43950] __kvm_nvhe_$d.2314 at 55d6f96003a7b120
+      ...
+           PC: 00000073f5294840   LR: 00000070d8f39ba4   SP: 00000070d4afd5d0
+          X29: 00000070d4afd600  X28: b4000071efcda7f0  X27: 00000070d4afe000
+          X26: 0000000000000000  X25: 00000070d9616000  X24: 0000000000000000
+          X23: 0000000000000000  X22: 0000000000000000  X21: 0000000000000000
+          X20: b40000728fd27520  X19: b40000728fd27550  X18: 000000702daba000
+          X17: 00000073f5294820  X16: 00000070d940f9d8  X15: 00000000000000bf
+          X14: 0000000000000000  X13: 00000070d8ad2fac  X12: b40000718fce5040
+          X11: 0000000000000000  X10: 0000000000000070   X9: 0000000000000001
+           X8: 0000000000000062   X7: 0000000000000020   X6: 0000000000000000
+           X5: 0000000000000000   X4: 0000000000000000   X3: 0000000000000000
+           X2: 0000000000000002   X1: 0000000000000080   X0: b40000728fd27550
+          ORIG_X0: b40000728fd27550  SYSCALLNO: ffffffff  PSTATE: 40001000
+    
+    Crash tool can not get the KERNELPACMASK value from the vmcoreinfo, need
+    to calculate its value based on the vabits.
+    
+    With the patch:
+    
+      crash> bt 16930
+      PID: 16930    TASK: ffffff89b3eada00  CPU: 2    COMMAND: "Firebase Backgr"
+       #0 [ffffffc034c437f0] __switch_to at ffffffe0036832d4
+       #1 [ffffffc034c43850] __schedule at ffffffe004cf05a0
+       #2 [ffffffc034c438b0] preempt_schedule_common at ffffffe004ceff80
+       #3 [ffffffc034c43950] unmap_page_range at ffffffe003a7b120
+       #4 [ffffffc034c439f0] unmap_vmas at ffffffe003a80a64
+       #5 [ffffffc034c43ac0] exit_mmap at ffffffe003a945c4
+       #6 [ffffffc034c43b10] __mmput at ffffffe00372c818
+       #7 [ffffffc034c43b40] mmput at ffffffe00372c0d0
+       #8 [ffffffc034c43b90] exit_mm at ffffffe00373d0ac
+       #9 [ffffffc034c43c00] do_exit at ffffffe00373bedc
+           PC: 00000073f5294840   LR: 00000070d8f39ba4   SP: 00000070d4afd5d0
+          X29: 00000070d4afd600  X28: b4000071efcda7f0  X27: 00000070d4afe000
+          X26: 0000000000000000  X25: 00000070d9616000  X24: 0000000000000000
+          X23: 0000000000000000  X22: 0000000000000000  X21: 0000000000000000
+          X20: b40000728fd27520  X19: b40000728fd27550  X18: 000000702daba000
+          X17: 00000073f5294820  X16: 00000070d940f9d8  X15: 00000000000000bf
+          X14: 0000000000000000  X13: 00000070d8ad2fac  X12: b40000718fce5040
+          X11: 0000000000000000  X10: 0000000000000070   X9: 0000000000000001
+           X8: 0000000000000062   X7: 0000000000000020   X6: 0000000000000000
+           X5: 0000000000000000   X4: 0000000000000000   X3: 0000000000000000
+           X2: 0000000000000002   X1: 0000000000000080   X0: b40000728fd27550
+          ORIG_X0: b40000728fd27550  SYSCALLNO: ffffffff  PSTATE: 40001000
+    
+    Related kernel commits:
+    689eae42afd7 ("arm64: mask PAC bits of __builtin_return_address")
+    de1702f65feb ("arm64: move PAC masks to <asm/pointer_auth.h>")
+    
+    Signed-off-by: bevis_chen <bevis_chen@asus.com>
+
+commit af895b219876b293d551e6dec825aba3905c0588
+Author: qiwu.chen <qiwu.chen@transsion.com>
+Date:   Wed Jul 24 01:36:09 2024 +0000
+
+    arm64: fix a potential segfault when unwind frame
+    
+    The range of frame->fp is checked insufficiently, which may lead to a wrong
+    next fp. As a result, bt->stackbuf will be accessed out of range, and segfault.
+    
+      crash> bt
+      [Detaching after fork from child process 11409]
+      PID: 7661     TASK: ffffff81858aa500  CPU: 4    COMMAND: "sh"
+       #0 [ffffffc008003f50] local_cpu_stop at ffffffdd7669444c
+    
+      Thread 1 "crash" received signal SIGSEGV, Segmentation fault.
+      0x00005555558266cc in arm64_unwind_frame (bt=0x7fffffffd8f0, frame=0x7fffffffd080) at
+      arm64.c:2821
+      2821            frame->fp = GET_STACK_ULONG(fp);
+      (gdb) bt
+      arm64.c:2821
+      out>) at main.c:1338
+      gdb_interface.c:81
+      (gdb) p /x *(struct bt_info*) 0x7fffffffd8f0
+      $3 = {task = 0xffffff81858aa500, flags = 0x0, instptr = 0xffffffdd76694450, stkptr =
+      0xffffffc008003f40, bptr = 0x0, stackbase = 0xffffffc027288000,
+        stacktop = 0xffffffc02728c000, stackbuf = 0x555556115a40, tc = 0x55559d16fdc0, hp = 0x0,
+      textlist = 0x0, ref = 0x0, frameptr = 0xffffffc008003f50,
+        call_target = 0x0, machdep = 0x0, debug = 0x0, eframe_ip = 0x0, radix = 0x0, cpumask =
+      0x0}
+      (gdb) p /x *(struct arm64_stackframe*) 0x7fffffffd080
+      $4 = {fp = 0xffffffc008003f50, sp = 0xffffffc008003f60, pc = 0xffffffdd76694450}
+      crash> bt -S 0xffffffc008003f50
+      PID: 7661     TASK: ffffff81858aa500  CPU: 4    COMMAND: "sh"
+      bt: non-process stack address for this task: ffffffc008003f50
+          (valid range: ffffffc027288000 - ffffffc02728c000)
+    
+    Check frame->fp value sufficiently before access it. Only frame->fp within
+    the range of bt->stackbase and bt->stacktop will be regarded as valid.
+    
+    Signed-off-by: qiwu.chen <qiwu.chen@transsion.com>
+
+commit ce4ddc742fbdde2fc966e79a19d6aa962e79448a
+Author: Li Zhijian <lizhijian@fujitsu.com>
+Date:   Tue Jul 2 14:31:30 2024 +0800
+
+    List: enable LIST_HEAD_FORMAT for -r option
+    
+    Currently, the LIST_HEAD_FORMAT is not set, 'list -r' will list the
+    traversal results in order, not in the reverse order. This is not
+    the expected behavior.
+    
+    Let's enable the LIST_HEAD_FORMAT for -r option by default.
+    
+    Signed-off-by: Li Zhijian <lizhijian@fujitsu.com>
+
+commit 3452fe802bf94d15879b3c5fd17c793a2b67a231
+Author: HAGIO KAZUHITO(萩尾　一仁) <k-hagio-ab@nec.com>
+Date:   Tue Jun 11 02:40:55 2024 +0000
+
+    Fix "kmem -i" and "swap" commands on Linux 6.10-rc1 and later kernels
+    
+    Kernel commit 798cb7f9aec3 ("swapon(2)/swapoff(2): don't bother with
+    block size") removed swap_info_struct.old_block_size member at Linux
+    6.10-rc1.  The crash-utility has used this to determine whether a swap
+    is a partition or file and to determine the way to get the swap path.
+    
+    Withtout the patch, the "kmem -i" and "swap" commands fail with the
+    following error messsage:
+    
+      crash> kmem -i
+      ...
+         TOTAL HUGE  13179392      50.3 GB         ----
+          HUGE FREE  13179392      50.3 GB  100% of TOTAL HUGE
+    
+      swap: invalid (optional) structure member offsets: swap_info_struct_swap_device or swap_info_struct_old_block_size
+            FILE: memory.c  LINE: 16032  FUNCTION: dump_swap_info()
+    
+    The swap_file member of recent swap_info_struct is a pointer to a
+    struct file (once upon a time it was dentry), use this fact directly.
+    
+    Tested-by: Li Zhijian <lizhijian@fujitsu.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 196c4b79c13d1c0e6d7b21c8321eca07d3838d6a
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Jun 12 11:00:00 2024 +0800
+
+    X86 64: fix a regression issue about kernel stack padding
+    
+    The commit 48764a14bc58 may cause a regression issue when the CONFIG_X86_FRED
+    is not enabled, this is because the SIZE(fred_frame) will call the
+    SIZE_verify() to determine if the fred_frame is valid, otherwise it will
+    emit an error:
+    
+      crash> bt 1
+    
+      bt: invalid structure size: fred_frame
+            FILE: x86_64.c  LINE: 4089  FUNCTION: x86_64_low_budget_back_trace_cmd()
+    
+      [/home/k-hagio/bin/crash] error trace: 588df3 => 5cbc72 => 5eb3e1 => 5eb366
+      PID: 1        TASK: ffff9f94c024b980  CPU: 2    COMMAND: "systemd"
+         #0 [ffffade44001bca8] __schedule at ffffffffb948ebbb
+         #1 [ffffade44001bd10] schedule at ffffffffb948f04d
+         #2 [ffffade44001bd20] schedule_hrtimeout_range_clock at ffffffffb9494fef
+         #3 [ffffade44001bda8] ep_poll at ffffffffb8c91be8
+         #4 [ffffade44001be48] do_epoll_wait at ffffffffb8c91d11
+         #5 [ffffade44001be80] __x64_sys_epoll_wait at ffffffffb8c92590
+         #6 [ffffade44001bed0] do_syscall_64 at ffffffffb947f459
+         #7 [ffffade44001bf50] entry_SYSCALL_64_after_hwframe at ffffffffb96000ea
+    
+          5eb366: SIZE_verify.part.42+70
+          5eb3e1: SIZE_verify+49
+          5cbc72: x86_64_low_budget_back_trace_cmd+3010
+          588df3: back_trace+1523
+    
+      bt: invalid structure size: fred_frame
+            FILE: x86_64.c  LINE: 4089  FUNCTION: x86_64_low_budget_back_trace_cmd()
+    
+    Let's replace the SIZE(fred_frame) with the VALID_SIZE(fred_frame) to
+    fix it.
+    
+    Fixes: 48764a14bc58 ("x86_64: fix for adding top_of_kernel_stack_padding for kernel stack")
+    Reported-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit a20eb05de3c1cab954d49eb8bb9dc7fe5224caa0
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Jun 5 17:30:33 2024 +0800
+
+    Fix for failing to load kernel module
+    
+    In some kernel modules such as libie.ko, the mem[MOD_TEXT].size
+    may be zero, currently crash will only check its value to determine
+    if the module is valid, otherwise it fails to load kernel module with
+    the following warning and error:
+    
+      WARNING: invalid kernel module size: 0
+            KERNEL: /lib/modules/6.10.0-rc1+/build/vmlinux
+          DUMPFILE: /proc/kcore
+              CPUS: 64
+              DATE: Wed Jun  5 12:49:02 IDT 2024
+            UPTIME: 5 days, 05:57:21
+      LOAD AVERAGE: 0.28, 0.06, 0.02
+             TASKS: 806
+          NODENAME: xxxx
+           RELEASE: 6.10.0-rc1+
+           VERSION: #1 SMP PREEMPT_DYNAMIC Fri May 31 04:56:59 IDT 2024
+           MACHINE: x86_64  (2100 Mhz)
+            MEMORY: 1.6 GB
+               PID: 203686
+           COMMAND: "crash"
+              TASK: ffff9f9bf66d0000  [THREAD_INFO: ffff9f9bf66d0000]
+               CPU: 52
+             STATE: TASK_RUNNING (ACTIVE)
+    
+      crash> mod
+      mod: cannot access vmalloc'd module memory
+      crash>
+    
+    Lets count the module size to check if the module is valid, that will
+    avoid the current failure.
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 6752571d8d782d07537a258a1ec8919ebd1308ad
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Jun 5 16:28:58 2024 +0800
+
+    X86 64: fix for crash session loading failure
+    
+    Kernel commit 223b5e57d0d5 ("mm/execmem, arch: convert remaining
+    overrides of module_alloc to execmem") makes crash session loading
+    failure as below:
+    
+      # ./crash -s
+      crash: seek error: kernel virtual address: ffffffff826bb418  type: "page_offset_base"
+    
+    For X86 64 architecture, currently crash will search for symbol
+    "module_load_offset" to determine if the KASLR is enabled, and go
+    into the relevant code block. But the symbols "module_load_offset"
+    has been removed since Linux v6.10-rc1, which caused the current
+    failure.
+    
+    And this issue can occur with live debugging and core dump file
+    debugging.
+    
+    Let's check the symbol "kaslr_regions" instead of "module_load_offset"
+    to fix it.
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 7c2c90d0b06a0dad00819b7f22be204664a698ff
+Author: HAGIO KAZUHITO(萩尾　一仁) <k-hagio-ab@nec.com>
+Date:   Wed Jun 5 07:30:03 2024 +0000
+
+    Fix "kmem -v" option on Linux 6.9 and later kernels
+    
+    The following kernel commits removed vmap_area_list and vmap_area_root
+    rb-tree, and introduced vmap_nodes.
+    
+      55c49fee57af mm/vmalloc: remove vmap_area_list
+      d093602919ad mm: vmalloc: remove global vmap_area_root rb-tree
+    
+    Without the patch, the "kmem -v" option and functions that use
+    dump_vmlist() fail with or without an error:
+    
+      crash> kmem -v
+         VM_STRUCT                 ADDRESS RANGE               SIZE
+      kmem: invalid kernel virtual address: ccccccccccccccd4  type: "vmlist addr"
+    
+      crash> kmem -v
+      crash>
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 48764a14bc5856f0b0bb30685336c68b832154fc
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Jun 7 15:29:23 2024 +0800
+
+    x86_64: fix for adding top_of_kernel_stack_padding for kernel stack
+    
+    With Kernel commit 65c9cc9e2c14 ("x86/fred: Reserve space for the FRED
+    stack frame") in Linux 6.9-rc1 and later, x86_64 will add extra padding
+    ('TOP_OF_KERNEL_STACK_PADDING (2 * 8)', see: arch/x86/include/asm\
+    /thread_info.h,) for kernel stack when the CONFIG_X86_FRED is enabled.
+    
+    As a result, the pt_regs will be moved downwards due to the offset of
+    padding, and the values of registers read from pt_regs will be incorrect
+    as below.
+    
+    Without the patch:
+      crash> bt
+      PID: 2040     TASK: ffff969136fc4180  CPU: 16   COMMAND: "bash"
+       #0 [ffffa996409aba38] machine_kexec at ffffffff9f881eb7
+       #1 [ffffa996409aba90] __crash_kexec at ffffffff9fa1e49e
+       #2 [ffffa996409abb48] panic at ffffffff9f91a6cd
+       #3 [ffffa996409abbc8] sysrq_handle_crash at ffffffffa0015076
+       #4 [ffffa996409abbd0] __handle_sysrq at ffffffffa0015640
+       #5 [ffffa996409abc00] write_sysrq_trigger at ffffffffa0015ce5
+       #6 [ffffa996409abc28] proc_reg_write at ffffffff9fd35bf5
+       #7 [ffffa996409abc40] vfs_write at ffffffff9fc8d462
+       #8 [ffffa996409abcd0] ksys_write at ffffffff9fc8dadf
+       #9 [ffffa996409abd08] do_syscall_64 at ffffffffa0517429
+      #10 [ffffa996409abf40] entry_SYSCALL_64_after_hwframe at ffffffffa060012b
+          [exception RIP: unknown or invalid address]
+          RIP: 0000000000000246  RSP: 0000000000000000  RFLAGS: 0000002b
+          RAX: 0000000000000002  RBX: 00007f9b9f5b13e0  RCX: 000055cee7486fb0
+          RDX: 0000000000000001  RSI: 0000000000000001  RDI: 00007f9b9f4fda57
+          RBP: 0000000000000246   R8: 00007f9b9f4fda57   R9: ffffffffffffffda
+          R10: 0000000000000000  R11: 00007f9b9f5b14e0  R12: 0000000000000002
+          R13: 000055cee7486fb0  R14: 0000000000000002  R15: 00007f9b9f5fb780
+          ORIG_RAX: 0000000000000033  CS: 7ffe65327978  SS: 0000
+      bt: WARNING: possibly bogus exception frame
+      crash>
+    
+    With the patch:
+    
+      crash> bt
+      PID: 2040     TASK: ffff969136fc4180  CPU: 16   COMMAND: "bash"
+       #0 [ffffa996409aba38] machine_kexec at ffffffff9f881eb7
+       #1 [ffffa996409aba90] __crash_kexec at ffffffff9fa1e49e
+       #2 [ffffa996409abb48] panic at ffffffff9f91a6cd
+       #3 [ffffa996409abbc8] sysrq_handle_crash at ffffffffa0015076
+       #4 [ffffa996409abbd0] __handle_sysrq at ffffffffa0015640
+       #5 [ffffa996409abc00] write_sysrq_trigger at ffffffffa0015ce5
+       #6 [ffffa996409abc28] proc_reg_write at ffffffff9fd35bf5
+       #7 [ffffa996409abc40] vfs_write at ffffffff9fc8d462
+       #8 [ffffa996409abcd0] ksys_write at ffffffff9fc8dadf
+       #9 [ffffa996409abd08] do_syscall_64 at ffffffffa0517429
+      #10 [ffffa996409abf40] entry_SYSCALL_64_after_hwframe at ffffffffa060012b
+          RIP: 00007f9b9f4fda57  RSP: 00007ffe65327978  RFLAGS: 00000246
+          RAX: ffffffffffffffda  RBX: 0000000000000002  RCX: 00007f9b9f4fda57
+          RDX: 0000000000000002  RSI: 000055cee7486fb0  RDI: 0000000000000001
+          RBP: 000055cee7486fb0   R8: 0000000000000000   R9: 00007f9b9f5b14e0
+          R10: 00007f9b9f5b13e0  R11: 0000000000000246  R12: 0000000000000002
+          R13: 00007f9b9f5fb780  R14: 0000000000000002  R15: 00007f9b9f5f69e0
+          ORIG_RAX: 0000000000000001  CS: 0033  SS: 002b
+      crash>
+    
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg00754.html
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 3879e9104826d5ae14a0824ec47ab60056a249a7
+Author: Alexander Gordeev <agordeev@linux.ibm.com>
+Date:   Wed Apr 10 14:55:35 2024 +0200
+
+    Reflect __{start,end}_init_task kernel symbols rename
+    
+    Kernel commit 8f69cba096b5 ("x86: Rename __{start,end}_init_task to
+    __{start,end}_init_stack") leads to failure when crash loading:
+    
+            crash: invalid count request: 0
+    
+    Assume both __{start,end}_init_task and __{start,end}_init_stack
+    symbols could exist for backward compatibility.
+    
+    Signed-off-by: Alexander Gordeev <agordeev@linux.ibm.com>
+
+commit 568c6f049ad4a20918afeb2db9bb7a15b17d9ff2
+Author: Guanyou Chen <chenguanyou9338@gmail.com>
+Date:   Wed Apr 17 19:55:40 2024 +0800
+
+    arm64: section_size_bits compatible with macro definitions
+    
+    Compatible with google android GKI changes,
+    SECTION_SIZE_BITS = 27 when defined 4K_PAGES or 16K_PAGES.
+    SECTION_SIZE_BITS = 29 when defined 64K_PAGES.
+    
+    Before android-12-gki:
+        crash> help -m | grep section_size_bits
+           section_size_bits: 30
+    
+    The first PFN error, the physical address should be 0x40000000.
+        crash> kmem -p
+              PAGE        PHYSICAL      MAPPING       INDEX CNT FLAGS
+        ffffffff06e00000 200000000 ffffff80edf4fa12 ffffffff070f3640  1
+    4000000000002000 private
+    
+    After android-12-gki:
+        crash> help -m | grep section
+           section_size_bits: 27
+    
+        crash> kmem -p
+              PAGE        PHYSICAL      MAPPING       INDEX CNT FLAGS
+        fffffffeffe00000  40000000                0        0  1 1000 reserved
+    
+    Link: https://lore.kernel.org/lkml/15cf9a2359197fee0168f820c5c904650d07939e.1610146597.git.sudaraja@codeaurora.org
+    Link: https://lore.kernel.org/all/43843c5e092bfe3ec4c41e3c8c78a7ee35b69bb0.1611206601.git.sudaraja@codeaurora.org
+    Link: https://cs.android.com/android/_/android/kernel/common/+/673e9ab6b64f981159aeff3b65675bb7dbedecd8
+    Signed-off-by: chenguanyou <chenguanyou@xiaomi.com>
+
+commit af2ac4c41df6d87f090613ecf3521ca073754cb0
+Author: chenguanyou <chenguanyou@xiaomi.com>
+Date:   Wed Apr 24 17:00:20 2024 +0800
+
+    Cleanup: replace struct zspage_5_17 with union
+    
+    This patch is a refactoring on commit [1], and has no functional
+    change. The reason is that the structure of zspage has not changed,
+    just new bits have been introduced. So a union is better to reduce
+    code replication.
+    
+    [1] 0172e35083b5 ("Fix "rd" command to display data on zram on Linux 5.17 and later")
+    
+    Signed-off-by: chenguanyou <chenguanyou@xiaomi.com>
+
+commit a584e9752fb2198c7f6d0130d8a94b17581f33c6
+Author: Yulong TANG 汤玉龙 <yulong.tang@nio.com>
+Date:   Tue Feb 20 15:09:49 2024 +0800
+
+    Adding the zram decompression algorithm "lzo-rle"
+    
+    Port the improved decompression method for "lzo" in the kernel to
+    support decompression of "lzorle".
+    
+    Since Linux 5.1, the default compression algorithm for zram was changed
+    from "lzo" to "lzo-rle".  The crash-utility only supports decompression
+    for "lzo", when parsing vmcore files that utilize zram compression, such
+    as when using the gcore command to detach process core dump files,
+    parsing cannot be completed successfully.
+    
+    before:
+            crash> gcore -v 0 1
+            gcore: WARNING: only the lzo compressor is supported
+            gcore: WARNING: only the lzo compressor is supported
+            gcore: WARNING: only the lzo compressor is supported
+            gcore: WARNING: only the lzo compressor is supported
+    after:
+            crash> gcore -v 0 1
+            Saved core.1.init
+    
+    Signed-off-by: yulong.tang <yulong.t...@nio.com>
+    Reviewed-by: Tao Liu <l...@redhat.com>
+    Signed-off-by: Kazuhito Hagio <k-hagio...@nec.com>
+
+commit 9104e87db44e076b9c9d63f879359d674ccc96f9
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Apr 29 10:05:13 2024 +0800
+
+    Mark start of 8.0.6 development phase with version 8.0.5++
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
