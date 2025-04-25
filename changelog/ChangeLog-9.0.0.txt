@@ -1,0 +1,845 @@
+commit 64f6efda29c84d8320c03337bb9728a35219da34
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Apr 25 10:02:34 2025 +0800
+
+    crash-8.0.6 -> crash-9.0.0
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 42fbae46441c54d959227ea4047778872cab2974
+Author: Tao Liu <ltao@redhat.com>
+Date:   Thu Apr 24 17:12:36 2025 +1200
+
+    Fix a regression of "help -r" which fail to print regs
+    
+    This patch fixed a regression introduced by commit aa9f724 ("Fix for "help -r"
+    segfault in case of ramdump"), which ignored the case which nd->nt_prstatus
+    may contain register notes. As a result, it fails to print the registers
+    of such case.
+    
+    Before:
+        crash> help -r
+        CPU 0:
+        help: registers not collected for cpu 0
+    
+        CPU 1: [OFFLINE]
+    
+    After:
+        crash> help -r
+        CPU 0:
+            RIP: ffffffff800c4d92  RSP: ffff810066cc7d68  RFLAGS: 00010246
+            RAX: 0000000000000000  RBX: 0000000000000000  RCX: 0000000000000000
+            RDX: 650001bc7e664240  RSI: 0000000000000000  RDI: 0000000000000000
+            RBP: 650001bc7e664240   R8: 0000000000000006   R9: ffff810069dd03d4
+            R10: ffff81007d942080  R11: ffffffff80154235  R12: 0000000000000000
+            R13: 0000000000000000  R14: 000000000001e5fe  R15: 0000000000000001
+            CS: 0010  SS: 0018
+    
+        CPU 1: [OFFLINE]
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 3340224deb12f7d160c39622f46c2271df81b1f3
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Wed Apr 23 05:27:58 2025 +0000
+
+    Fix "log -c" option on Linux 6.14 and later kernels
+    
+    Kernel commit 7863dcc72d0f ("pid: allow pid_max to be set per pid
+    namespace") moved the pid_max variable into init_pid_ns.  Without the
+    patch, the "log -c" option fails with the following error:
+    
+      crash> log -c
+      log: cannot resolve: "pid_max"
+    
+    While it is possible to track the pid_max value to init_pid_ns.pid_max,
+    considering the option's availability, it might be better not to do so
+    just for the sake of printing width.  Furthermore, the current
+    PID_MAX_LIMIT is 4194304, which does not exceed PID_CHARS_DEFAULT(8).
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit b982ddc4d66dcd59e567201428eb6191e4a24695
+Author: Stephen Brennan <stephen.s.brennan@oracle.com>
+Date:   Thu Apr 3 15:17:42 2025 -0700
+
+    Fix bad relocations when module sh_addr is nonzero
+    
+    In the previous commit, we fixed crash's logic which determines the
+    module load addresses in the presence of sections with nonzero sh_addr.
+    This allowed GDB to correctly locate public variables (i.e. GLOBAL
+    symbols) via the ELF symbol table (msymbols). However, LOCAL symbols
+    still had incorrect addresses.
+    
+    The root cause for those issues is not in crash. Instead, GDB does not
+    expect sections with nonzero sh_addr, and so it slipped up in multiple
+    places:
+    
+    1. In default_symfile_offsets(), GDB detects the nonzero sh_addr field
+       and fails to apply the user-supplied section offsets. The result is
+       that later, in symfile_relocate_debug_section(), relocations are
+       applied to the DWARF info using the wrong section addresses, which
+       results in invalid addresses for variables. Clearly, this has
+       happened before, because crash has special-cased the "__ksymtab*"
+       section names to avoid this condition. To resolve this, we simply
+       drop the check for nonzero sh_addr altogether: the only ET_REL files
+       we encounter should be kernel modules, so there's no real reason to
+       be picky.
+    
+    2. Even with that fixed, the user-supplied section addresses are
+       clobbered by the addr_info_make_relative(), which subtracts out
+       section offsets during its operation. To resolve this, undo the
+       operation for ET_REL files where a section address was provided by
+       the user (i.e. crash).
+    
+    With these two fixes, both local and global variables from a module
+    section with nonzero sh_addr are correctly reported. Behavior is
+    unchanged for modules with a zero sh_addr.
+    
+    Signed-off-by: Stephen Brennan <stephen.s.brennan@oracle.com>
+
+commit 2cf1a93805a8df6a2a4b7fde8d57b6d873c1bbeb
+Author: Stephen Brennan <stephen.s.brennan@oracle.com>
+Date:   Tue Apr 1 14:01:29 2025 -0700
+
+    Fix module section load address when sh_addr != 0
+    
+    A user reported that crash was reporting the address for certain module
+    variables incorrectly. I was able to track it down specifically to
+    variables which were located in the .data section of a kernel module.
+    While the "sym" command gave the correct value, printing the address of
+    the variable or expressions based on it with "p" would give an incorrect
+    value. For example, the variable "ata_dummy_port_ops" variable is
+    included in the .data section of libata.ko when built as a module:
+    
+        $ sudo grep '\bata_dummy_port_ops\b' /proc/kallsyms
+        ffffffffc0a71580 d ata_dummy_port_ops   [libata]
+        $ sudo crash /usr/lib/debug/lib/modules/$(uname -r)/vmlinux /proc/kcore
+        crash> sym ata_dummy_port_ops
+        ffffffffc0a71580 (?) ata_dummy_port_ops [libata]
+        crash> mod -s libata
+             MODULE       NAME                      TEXT_BASE         SIZE  OBJECT FILE
+        ffffffffc0a7b640  libata                 ffffffffc0a47000   520192
+        /usr/lib/debug/lib/modules/6.12.0-0.11.8.el9uek.x86_64/kernel/drivers/ata/libata.ko.debug
+        crash> sym ata_dummy_port_ops
+        ffffffffc0a71580 (B) ata_dummy_port_ops [libata]
+        crash> p/x &ata_dummy_port_ops
+        $1 = 0xffffffffc0a6fe80
+    
+    The symbol value (from kallsyms) is correct, but its address provided by
+    GDB is incorrect. It turns out that the .data section has an sh_addr
+    which is non-zero. The result of this is that calculate_load_order_6_4()
+    incorrectly calculates the base address for the .data section. This
+    patch fixes the base address which is later provided to GDB via
+    add-symbol-file.
+    
+    The impact here is interesting. Only variables within sections that have
+    a non-zero sh_addr are impacted. It turns out that this is relatively
+    common since Linux kernel commit 22d407b164ff7 ("lib: add allocation
+    tagging support for memory allocation profiling"), which was merged in
+    6.10. That commit added an entry to the scripts/module.lds.S linker
+    script, without specifying a base address of zero. I believe that is the
+    reason for the non-zero base addresses.
+    
+    I was able to verify that, in addition to the Oracle Linux kernel where
+    we initially noticed the issue, kernel modules on Arch Linux and Fedora
+    also have non-zero .data sh_addr values. This is likely the case for
+    most non-clang kernels since 6.10, but those were the only two distros I
+    checked. While my reading of the module.lds.S seems to indicate that
+    kernels built with CONFIG_LTO_CLANG=y should also have non-zero .data,
+    .bss, and .rodata section addresses, I haven't been able to reproduce
+    this with clang LTO kernels. Regardless, crash should properly handle
+    non-zero sh_addr since it exists in the real world now.
+    
+    The core of the issue is that the symbol value returned by BFD includes
+    the sh_addr of the section containing the symbol. For example, suppose
+    a symbol with address 0 is located within a section with virtual address
+    0xa00. Then, the resulting symbol value will be 0xa00, not 0.
+    
+    calculate_load_order_6_4() computes the base address of each section by
+    using a kallsyms symbol known to be within that section, and then
+    subtracting the value of the symbol from the object file. This
+    implicitly assumes that the section sh_addr is zero, and thus the symbol
+    value is just an offset. To fix the computation, add in the section base
+    address, to account for cases where it is non-zero.
+    
+    Signed-off-by: Stephen Brennan <stephen.s.brennan@oracle.com>
+
+commit 974868ca4e64f2cbb70976538db743a5790de24e
+Author: Austin Kim <austindh.kim@gmail.com>
+Date:   Tue Apr 1 11:06:23 2025 +0900
+
+    RISCV64: Add more system properties to the 'mach' command
+    
+    Currently, 'mach' command displays only basic system properties for
+    RISC-V-based vmcores. This commit enhances the mach command by adding
+    additional system details, including virtual memory addresses, IRQ stacks,
+    and overflow stacks.
+    
+    (before)
+    crash> mach
+                    MACHINE TYPE: riscv64
+                     MEMORY SIZE: 4 GB
+                            CPUS: 4
+                 PROCESSOR SPEED: (unknown)
+                              HZ: 100
+                       PAGE SIZE: 4096
+               KERNEL STACK SIZE: 16384
+    
+    (after)
+    crash> mach
+                    MACHINE TYPE: riscv64
+                     MEMORY SIZE: 4 GB
+                            CPUS: 4
+                 PROCESSOR SPEED: (unknown)
+                              HZ: 100
+                       PAGE SIZE: 4096
+    KERNEL VIRTUAL BASE: ffffffd800000000
+    KERNEL MODULES BASE: ffffffff01d08000
+    KERNEL VMALLOC BASE: ffffffc800000000
+    KERNEL VMEMMAP BASE: ffffffc700000000
+               KERNEL STACK SIZE: 16384
+         IRQ STACK SIZE: 16384
+             IRQ STACKS:
+                  CPU 0: ffffffc800000000
+                  CPU 1: ffffffc800008000
+                  CPU 2: ffffffc800010000
+                  CPU 3: ffffffc800018000
+    OVERFLOW STACK SIZE: 4096
+        OVERFLOW STACKS:
+                  CPU 0: ffffffd8fc7433c0
+                  CPU 1: ffffffd8fc75f3c0
+                  CPU 2: ffffffd8fc77b3c0
+                  CPU 3: ffffffd8fc7973c0
+    
+    Signed-off-by: Austin Kim <austindh.kim@gmail.com>
+
+commit 25828e83d5f8990598dde5840929bf60f4e83810
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Feb 26 17:51:21 2025 +1300
+
+    symbols: redetermine the end of kernel range for in_ksymbol_range
+    
+    For in_ksymbol_range(), it determine the kernel range by st->symtable[0].value
+    as the start and st->symtable[st->symcnt-1].value as the end, this
+    however, implies the last element is in the kernel range. In most
+    cases it was correct, but it is no longer valid with the kernel commit [1].
+    
+    The xen_elfnote_phys32_entry_value introduced by [1], is beyound the kernel
+    range(doesn't belong to any kernel section), thus doesn't get relocated
+    by relocate(). So in order to have a correct in_ksymbol_range(), we need
+    to eliminate those symbols.
+    
+    Without the patch:
+    crash> sym schedule
+    ffffffff973ffb30 (T) schedule /root/linux-6.14-rc3/kernel/sched/core.c: 6848
+    crash> sym 0xffffffff973ffb30
+    sym: invalid address: 0xffffffff973ffb30
+    
+    With the patch:
+    crash> sym schedule
+    ffffffff973ffb30 (T) schedule /root/linux-6.14-rc3/kernel/sched/core.c: 6848
+    crash> sym 0xffffffff973ffb30
+    ffffffff973ffb30 (T) schedule /root/linux-6.14-rc3/kernel/sched/core.c: 6848
+    
+    [1]: https://github.com/torvalds/linux/commit/223abe96ac0d227b22d48ab447dd9384b7a6c9fa
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 87887dbef251161cc2f1f9f5b72bc60ba0126e34
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Mar 28 11:32:28 2025 +0800
+
+    Add a PR closer
+    
+    Currently, it's impossible to disable pull request on github, so we have
+    to add a workflow event to trigger it, which will automatically close
+    the PR when attempting to open/reopen a PR on the github repo, and send a
+    reminder on how to contribute patches to the crash-utility mailing list.
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 39ee29b715131eef4328a9c8879f756f25ce5dc6
+Author: Wang Guanghui <wanggh1@sugon.com>
+Date:   Fri Oct 11 14:06:18 2024 +0800
+
+    Prevent double-free strbuf when nsyms is 0
+    
+    When nsyms is 0, 'last' will be equal to 'first', and strbuf will not
+    get a new memory buf. But strbuf is not NULL now, because in the last
+    loop, strbuf may get a memory buf allocated by 'calloc', which is only
+    freed in the loop end but not set to NULL. If we don't set strbuf to
+    NULL in such a case, strbuf will be double freed in the following
+    FREEBUF(strbuf) sentence.
+    
+    Signed-off-by: Wang Guanghui <wanggh1@sugon.com>
+
+commit 90e1921a76f565d14b16e008ccfa3737ba10e67d
+Author: Wolfgang Frisch <wolfgang.frisch@suse.com>
+Date:   Tue Feb 18 10:07:28 2025 +0100
+
+    extensions/Makefile: eliminate race condition
+    
+    Building extensions with parallel jobs could lead to a race condition
+    when creating and using the temporary `.constructor` file. This resulted
+    in unpredictable build outcomes and unreproducible builds. This commit
+    removes the temporary file entirely, resolving the race condition and
+    ensuring consistent builds.
+    
+    Signed-off-by: Wolfgang Frisch <wolfgang.frisch@suse.com>
+
+commit efb15d58faa29949da5d0eb107b46794dc8eeabf
+Author: Ngai-Mint Kwan <ngai-mint.kwan@intel.com>
+Date:   Tue Feb 6 10:45:52 2024 -0800
+
+    Doc: correct spelling under "help list"
+    
+    Correct minor spelling mistake when calling "help list".
+    
+    Resolves: #155
+    Signed-off-by: Ngai-Mint Kwan <ngai-mint.kwan@intel.com>
+
+commit f30f97dd84664578b49aa1870759faad3ea7dd77
+Author: Shengjing Zhu <shengjing.zhu@canonical.com>
+Date:   Fri Jul 12 17:42:00 2024 +0800
+
+    Makefile: Pass CFLAGS when building extensions
+    
+    When building the extensions in distributions, ensure they are built
+    with the CFLAGS from distributions build system.
+    
+    Signed-off-by: Shengjing Zhu <shengjing.zhu@canonical.com>
+
+commit a312f58feb05bf86c78d2a10ee051be8db26c6bd
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Feb 19 20:09:00 2025 +0800
+
+    Add ci-build.yml
+    
+    Enable ci build on arches:
+    x86_64, x86, aarch64, s390x, powerpc64, alpha, sparc64, mips, riscv64
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 1248bfa806020abbbde5f52e9257889698580b57
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Mar 12 15:45:07 2025 +0800
+
+    Add cross compilation support
+    
+    Currently, the cross compilation is not supported in
+    crash-utility, let's add this feature.
+    
+    Tested(ubuntu-24.04) on: X86_64, X86, aarch64, s390x,
+    powerpc64, alpha, sparc64, mips, riscv64
+    
+    E.g: cross build crash-utility for aarch64 on X86_64
+     make CROSS_COMPILE=aarch64-linux-gnu- -j`nproc`
+    or
+     make CROSS_COMPILE=aarch64-linux-gnu- -j`nproc` warn
+    
+    Note: there are still some limitations for cross
+    compilation because some dependency libs that are not
+    cross-compiled, for example: snappy, lzo, zstd
+    
+    Link: https://lists.crash-utility.osci.io/archives/list/devel@lists.crash-utility.osci.io/thread/Y27LRU3D2PA7OZ2N3A3EJNQGFEY4A7NS/
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 3115791c6894802b5f590c7a97fcc6516ae22a9e
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Mar 12 15:32:19 2025 +0800
+
+    gdb:disable building gdbserver in crash-utility
+    
+    The gdbserver is unused in crash-utility, but it
+    is always built by default during crash building.
+    Let's disable gdbserver building to save some time.
+    
+    There are several advantages, for example:
+    [1] speed up crash building and save time
+    [2] avoid some compilation issues
+    [3] the following cross compile and ci will benefit
+        from this.
+    
+    In addition, this is harmless for the old compilation
+    methods.
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit bc1fc6ac218cdca8d0259832e0d2f338640d3477
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Feb 18 09:30:06 2025 +0800
+
+    sparc64: fix build failure
+    
+    The following biuld error is observed on sparc64:
+      ...
+      defs.h:2592:54: error: expected statement before ‘)’ token
+       2592 | #define BOOL(ADDR)      LOADER(bool) ((char *)(ADDR)))
+            |                                                      ^
+      sbitmap.c:425:35: note: in expansion of macro ‘BOOL’
+        425 |                 sc->round_robin = BOOL(sbitmap_buf + OFFSET(sbitmap_round_robin));
+            |                                   ^~~~
+      make[5]: *** [Makefile:395: sbitmap.o] Error 1
+    
+    The round brackets are not paired, let's fix it.
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit ca0b70ea3cbe41eff47fbedb26b3f35e5604e9bf
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Mar 19 16:37:48 2025 +0800
+
+    .gitignore: add gdb-16.2 directory
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit dfb2bb55e530db076e41cb0e41a3f6e1cc5794a0
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Mar 7 10:10:30 2025 +0800
+
+    Update to gdb 16.2
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 080b4baf5d5e998750f80289c847f162bb81a043
+Author: Tao Liu <ltao@redhat.com>
+Date:   Mon Feb 24 15:59:13 2025 +1300
+
+    Fix the failing of cmd "runq -g" for v6.14-rc1 kernel
+    
+    Kernel commit <7b8a702d9438> ("sched/fair: Rename h_nr_running
+    into h_nr_queued") renamed the member "h_nr_running" of struct
+    cfs_rq into "h_nr_queued".
+    
+    Without the patch:
+      crash> runq -g
+      ...
+      runq: invalid structure member offset: cfs_rq_nr_running
+            FILE: task.c  LINE: 9480  FUNCTION: dump_tasks_in_lower_dequeued_cfs_rq()
+    
+      [./crash] error trace: 580934 => 580090 => 5f1f31 => 5f1eb3
+    
+        5f1eb3: OFFSET_verify.part.40+51
+        5f1f31: OFFSET_verify+49
+        580090: dump_tasks_in_lower_dequeued_cfs_rq+444
+        580934: dump_tasks_in_task_group_cfs_rq+1229
+    
+      runq: invalid structure member offset: cfs_rq_nr_running
+            FILE: task.c  LINE: 9480  FUNCTION: dump_tasks_in_lower_dequeued_cfs_rq()
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+    Reported-by: Anderson Nascimento <andersonc0d3@gmail.com>
+
+commit 2795136a515446b798ebbfa257c97f0ca6ecb8ec
+Author: Tao Liu <ltao@redhat.com>
+Date:   Mon Feb 24 15:59:12 2025 +1300
+
+    Fix the failing of cmd "files" for v6.14-rc1 kernel
+    
+    Kernel commit <58cf9c383c5c> ("dcache: back inline names with
+    a struct-wrapped array of unsigned long") renamed "unsigned char
+    d_iname" into "union shortname_store d_shortname", the same change
+    should be integrated into crash.
+    
+    Without the patch:
+    
+      crash> files
+      files: invalid structure member offset: dentry_d_iname
+             FILE: filesys.c  LINE: 3243  FUNCTION: get_pathname_component()
+    
+      [./crash] error trace: 55e532 => 55ea57 => 5f1f31 => 5f1eb3
+      PID: 1490     TASK: ffff8dd00c4c2900  CPU: 0    COMMAND: "bash"
+    
+        5f1eb3: OFFSET_verify.part.40+51
+        5f1f31: OFFSET_verify+49
+        55ea57: get_pathname_component+69
+        55e532: get_pathname+636
+    
+      files: invalid structure member offset: dentry_d_iname
+             FILE: filesys.c  LINE: 3243  FUNCTION: get_pathname_component()
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+    Reported-by: Anderson Nascimento <andersonc0d3@gmail.com>
+
+commit 2724bb1d0260f3886f8a3d533838caf80c7e61e5
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Jan 24 17:56:23 2025 +0800
+
+    Fix build failure on 32bit machine(i686)
+    
+    This issue was caused by commit 0f39e33d3504 with the following
+    compilation error:
+    
+      frame.c: In function ‘CORE_ADDR frame_unwind_pc(frame_info*)’:
+      frame.c:982:35: error: cannot convert ‘CORE_ADDR*’ {aka ‘long long unsigned int*’} to ‘ulong*’ {aka ‘long unsigned int*’}
+        982 |           crash_decode_ptrauth_pc(&pc);
+            |                                   ^~~
+            |                                   |
+            |                                   CORE_ADDR* {aka long long unsigned int*}
+      frame.c:948:48: note: initializing argument 1 of ‘void crash_decode_ptrauth_pc(ulong*)’
+        948 | extern "C" void crash_decode_ptrauth_pc(ulong* pc);
+            |                                         ~~~~~~~^~
+    
+    Fixes: 0f39e33d3504 ("arm64: add pac mask to better support gdb stack unwind")
+    Reported-by: Guanyou.Chen <chenguanyou@xiaomi.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 325a9d1b3b4ce76bf4556235c885e619e219622c
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Jan 24 15:32:59 2025 +0800
+
+    tools.c: do not use keywords 'nullptr' as a variable in code
+    
+    Without the patch:
+    
+      tools.c: In function ‘drop_core’:
+      tools.c:6251:23: error: expected identifier or ‘(’ before ‘nullptr’
+       6251 |         volatile int *nullptr;
+            |                       ^~~~~~~
+      tools.c:6259:17: error: lvalue required as left operand of assignment
+       6259 |         nullptr = NULL;
+            |                 ^
+      tools.c:6261:21: error: invalid type argument of unary ‘*’ (have ‘typeof (nullptr)’)
+       6261 |                 i = *nullptr;
+            |                     ^~~~~~~~
+      make[6]: *** [Makefile:345: tools.o] Error 1
+    
+    Note: this was observed on gcc version 15.0.1
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 772fbb1022911410b5fb773fde37910fc8286041
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Jan 24 16:12:40 2025 +0800
+
+    Fix build failure in readline lib
+    
+    This is a backported patch from gdb upstream, see the commit
+    425f843d58c5 ("Import GNU Readline 8.2"), and only backported
+    patch related to compilation errors.
+    
+    Without the patch:
+    
+      signals.c: In function ‘_rl_handle_signal’:
+      signals.c:62:36: error: ‘return’ with a value, in function returning void [-Wreturn-mismatch]
+         62 | #  define SIGHANDLER_RETURN return (0)
+            |                                    ^
+      signals.c:290:3: note: in expansion of macro ‘SIGHANDLER_RETURN’
+        290 |   SIGHANDLER_RETURN;
+            |   ^~~~~~~~~~~~~~~~~
+      signals.c:178:1: note: declared here
+        178 | _rl_handle_signal (int sig)
+            | ^~~~~~~~~~~~~~~~~
+      signals.c: In function ‘rl_sigwinch_handler’:
+      signals.c:306:32: error: passing argument 2 of ‘rl_set_sighandler’ from incompatible pointer type [-Wincompatible-pointer-types]
+        306 |   rl_set_sighandler (SIGWINCH, rl_sigwinch_handler, &dummy_winch);
+            |                                ^~~~~~~~~~~~~~~~~~~
+            |                                |
+            |                                void (*)(int)
+      In file included from rldefs.h:31,
+                       from signals.c:37:
+      signals.c:81:51: note: expected ‘void (*)(void)’ but argument is of type ‘void (*)(int)’
+         81 | static SigHandler *rl_set_sighandler PARAMS((int, SigHandler *, sighandler_cxt *));
+    
+    Note: the current build failure was observed on gcc (GCC) 15.0.0.
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit e72b0ab8ebad6b1c264ec8618be77263334823d9
+Author: Tao Liu <ltao@redhat.com>
+Date:   Fri Jan 24 00:11:19 2025 +1300
+
+    x86_64: Fix 'bt -S/-I' segfault issue
+    
+    The "pcp" and "spp" can be NULL for "bt -S/-I", but the value is not
+    checked before pointer dereference, which lead to segfault error.
+    This patch fix this by delay the pointer dereference after
+    x86_64_get_dumpfile_stack_frame().
+    
+    Before:
+    crash> bt -S ffffbccee0087ab8
+    PID: 2179     TASK: ffffa0f78912a3c0  CPU: 43   COMMAND: "bash"
+    Segmentation fault (core dumped)
+    
+    After:
+    crash> bt -S ffffbccee0087ab8
+    PID: 2179     TASK: ffffa0f78912a3c0  CPU: 43   COMMAND: "bash"
+     #0 [ffffbccee0087b10] __crash_kexec at ffffffffad20c30a
+     #1 [ffffbccee0087bd0] panic at ffffffffadcbce30
+     #2 [ffffbccee0087c50] sysrq_handle_crash at ffffffffad802b86
+     ...
+    
+    Reported-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 0f39e33d3504f3a17b83574c3be97640460b7eef
+Author: Guanyou.Chen <chenguanyou@xiaomi.com>
+Date:   Wed Dec 25 23:50:28 2024 +0800
+
+    arm64: add pac mask to better support gdb stack unwind
+    
+    Currently, gdb passthroughs of 'bt', 'frame', 'up', 'down',
+    'info, locals' don't work on arm64 machine enabled pauth.
+    This is because gdb does not know the lr register actual values
+    to unwind the stack frames.
+    
+    Without the patch:
+        crash> gdb bt
+        #0  __switch_to (prev=0xffffff8001af92c0, next=0xffffff889da7a580) at /proc/self/cwd/common/arch/arm64/kernel/process.c:569
+        #1  0x9fc5c5d3602132c0 in ?? ()
+        Backtrace stopped: previous frame identical to this frame (corrupt stack?)
+    
+    With the patch:
+        crash> gdb bt
+        #0  __switch_to (prev=prev@entry=0xffffff8001af92c0, next=next@entry=0xffffff889da7a580) at /proc/self/cwd/common/arch/arm64/kernel/process.c:569
+        #1  0xffffffd3602132c0 in context_switch (rq=0xffffff8a7295a080, prev=0xffffff8001af92c0, next=0xffffff889da7a580, rf=<optimized out>) at /proc/self/cwd/common/kernel/sched/core.c:5515
+        #2  __schedule (sched_mode=<optimized out>, sched_mode@entry=2147859424) at /proc/self/cwd/common/kernel/sched/core.c:6843
+        #3  0xffffffd3602136d8 in schedule () at /proc/self/cwd/common/kernel/sched/core.c:6917
+        ...
+    
+    Signed-off-by: Guanyou.Chen <chenguanyou@xiaomi.com>
+
+commit 88453095a3dd54b0950f7d9011fb32b47aaaa0c7
+Author: Lucas Oakley <soakley@redhat.com>
+Date:   Fri Jan 3 16:52:18 2025 -0500
+
+    Fix misleading CPU count in display_sys_stats()
+    
+    This simplication fixes the total CPU count being reported
+    incorrectly in ppc64le and s390x systems when some number of
+    CPUs have been offlined, as the kt->cpus value is adjusted.
+    This adds the word "OFFLINE" to the 'sys' output for s390x
+    and ppc64le, like exists for x86_64 and aarch64 when examining
+    systems with offlined CPUs.
+    
+    Without patch:
+    
+      KERNEL: /debug/4.18.0-477.10.1.el8_8.s390x/vmlinux
+    DUMPFILE: /proc/kcore
+        CPUS: 1
+    
+    With patch:
+    
+      KERNEL: /debug/4.18.0-477.10.1.el8_8.s390x/vmlinux
+    DUMPFILE: /proc/kcore
+        CPUS: 2 [OFFLINE: 1]
+    
+    Signed-off-by: Lucas Oakley <soakley@redhat.com>
+
+commit b39f8b558f9c71f91ae5f623a06b8db66291fbc8
+Author: Aureau, Georges (Kernel Tools ERT) <georges.aureau@hpe.com>
+Date:   Wed Jan 8 14:37:39 2025 +0000
+
+    Enhance "kmem -i[=shared]" to display(or not) shared pages
+    
+    The "kmem -i" command is extremely slow(appears to hang) on dumps from
+    large memory systems. For example, on 120GB crash dump from a high-end
+    server with 32TB of RAM(ie.8Giga Pages), the "kmem -i" command is taking
+    over 50 minutes to execute on a DL380 Gen10.
+    
+    To report basic general memory usage figures, we should only be reaing
+    global counters, without having to walk the full flag/sparse mem map
+    page table. Hence, dump_kmeminfo() should first be reading globals, and
+    then only call dump_mem_map() if important information(ie. slabs or
+    total ram) is missing.
+    
+    Signed-off-by: Georges Aureau <georges.aureau@hpe.com>
+
+commit a713368a3474a5f0a322d0c503e0ebfc97d4f07c
+Author: qiwu.chen@transsion.com <qiwu.chen@transsion.com>
+Date:   Wed Jan 8 09:57:07 2025 +0000
+
+    kmem: fix the determination of slab page due to invalid page_type
+    
+    The slab page is determined by the PG_slab bit of page flag, when
+    traversing pages of sparse memory, page_slab() fails to read page_type
+    for invalid pages, which was observed on ARM64+kernel-5.10 vmcore. For
+    example:
+    
+      crash> kmem -i
+      kmem: invalid kernel virtual address: ffffffff0be00030  type: "page_type"
+    
+    Signed-off-by: qiwu.chen <qiwu.chen@transsion.com>
+
+commit 8eb5279fdd2e447e593fc04c86a9993661f37410
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Tue Jan 7 02:45:40 2025 +0000
+
+    Fix "net -a" option on Linux 6.13 and later kernels
+    
+    Kernel commit e4e3fd0a99d5 ("Merge branch 'improve-neigh_flush_dev-performance'")
+    and its patch set, which are contained in Linux 6.13 and later kernels,
+    removed neigh_hash_table.hash_buckets and neighbour.next members, and
+    introduced neigh_hash_table.hash_heads and neighbour.hash members
+    instead with the hlist implementation.
+    
+    Without the patch, the "net -a" option fails with the following error:
+    
+      crash> net -a
+    
+      net: invalid structure member offset: neigh_table_hash_buckets
+           FILE: net.c  LINE: 701  FUNCTION: dump_arp()
+      ...
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 7357d822124c917014346115a4e487959c334c7c
+Author: yeping.zheng <wonderzyp@gmail.com>
+Date:   Mon Jan 6 00:18:07 2025 +0800
+
+    Doc: add compilation requirements note in README
+    
+    Signed-off-by: yeping.zheng <yeping.zheng@nio.com>
+
+commit 69aef36ff4bc374b510db6037d3b4383200a6b9f
+Author: Lucas Oakley <soakley@redhat.com>
+Date:   Sat Dec 14 18:01:14 2024 -0500
+
+    Fix incorrect 'bt -v' output suggesting overflow
+    
+    Change check_stack_overflow() to check if the thread_info's cpu
+    member is smaller than possible existing CPUs, rather than the
+    kernel table's cpu number (kt->cpus). The kernel table's cpu number
+    is changed on some architectures to reflect the highest numbered
+    online cpu + 1. This can cause a false positive in
+    check_stack_overflow() if the cpu member of a parked task's
+    thread_info structure, assigned to an offlined cpu, is larger than
+    the kt->cpus but lower than the number of existing logical cpus.
+    An example of this is RHEL 7 on s390x or RHEL 8 on ppc64le when
+    the highest numbered CPU is offlined.
+    
+    Signed-off-by: Lucas Oakley <soakley@redhat.com>
+
+commit 8a11aa07d7b0f0e0fc165365376c0b8af9da7be8
+Author: Hou Wenlong <houwenlong.hwl@antgroup.com>
+Date:   Tue Dec 10 20:18:43 2024 +0800
+
+    x86_64: Mark #VC stack unavailable when CONFIG_AMD_MEM_ENCRYPT is not set
+    
+    When 'CONFIG_AMD_MEM_ENCRYPT' is not set, the IDT handler for #VC is not
+    registered, but the address of the #VC IST stack is still set in
+    tss_setup_ist(). Therefore, the name of the associated exception stack
+    is "UNKNOWN" instead of "VC". Although the base of the exception stack
+    is not zero and is available, it is not accessible, which will cause the
+    backtrace to fail when attempting to access the #VC stack. To fix this,
+    remove the name check.
+    
+    Signe-off-by: Hou Wenlong <houwenlong.hwl@antgroup.com>
+
+commit f07032991f3d0612a143120e8d83895e9f7b34af
+Author: Guanyou.Chen <chenguanyou@xiaomi.com>
+Date:   Wed Nov 6 10:07:16 2024 +0800
+
+    arm64: add cpu context registers to better support gdb stack unwind
+    
+    Let gdb fetch_registers include cpu context registers x19~x28, which
+    will be helpful to show more args when gdb stack unwind.
+    
+    Without the patch:
+        crash> gdb bt
+        #0  __switch_to (prev=<unavailable>, prev@entry=0xffffff80025f0000, next=next@entry=<unavailable>) at arch/arm64/kernel/process.c:566
+        #1  0xffffffc008f820b8 in context_switch (rq=0xffffff81fcf419c0, prev=0xffffff80025f0000, next=<unavailable>, rf=<optimized out>) at kernel/sched/core.c:5471
+        #2  __schedule (sched_mode=<optimized out>, sched_mode@entry=168999904) at kernel/sched/core.c:6857
+        #3  0xffffffc008f82514 in schedule () at kernel/sched/core.c:6933
+        ...
+    
+    With the patch:
+        crash> gdb bt
+        #0  __switch_to (prev=prev@entry=0xffffff80025f0000, next=next@entry=0xffffff80026092c0) at arch/arm64/kernel/process.c:566
+        #1  0xffffffc008f820b8 in context_switch (rq=0xffffff81fcf419c0, prev=0xffffff80025f0000, next=0xffffff80026092c0, rf=<optimized out>) at kernel/sched/core.c:5471
+        #2  __schedule (sched_mode=<optimized out>, sched_mode@entry=168999904) at kernel/sched/core.c:6857
+        #3  0xffffffc008f82514 in schedule () at kernel/sched/core.c:6933
+        ...
+    
+    Signed-off-by: Guanyou.Chen <chenguanyou@xiaomi.com>
+
+commit aa9f7248075c701e565b59ec2ebf80c8f76b30f6
+Author: Guanyou Chen <chenguanyou9338@gmail.com>
+Date:   Fri Nov 1 18:01:27 2024 +0800
+
+    Fix for "help -r" segfault in case of ramdump
+    
+    When the ELF note does not contain CPU registers, attempting to retrieve
+    online CPU registers will cause a crash. This is likely to happen for
+    ramdump cases as follows, where the ELF header is created by crash at
+    runtime.
+    
+      crash> help -r
+      ...
+       WARNING: cpu 7: cannot find NT_PRSTATUS note
+             KERNEL: vmlinux  [TAINTED]
+          DUMPFILES: /var/tmp/ramdump_elf_RabECD [temporary ELF header]
+                     DDRCS0_0.BIN
+                     ...
+                     DDRCS2_2.BIN
+               CPUS: 8
+      ...
+    
+    With the patch:
+      crash> help -r
+      ...
+      CPU 6:
+      help: registers not collected for cpu 6
+      ...
+    
+    Lets add a sanity check to avoid the current issue.
+    
+    Signed-off-by: Guanyou.Chen <chenguanyou@xiaomi.com>
+
+commit e44a9a9d808c83fb846060f65e5aaa9d30b6e2c4
+Author: Kazuhito Hagio <k-hagio-ab@nec.com>
+Date:   Thu Dec 5 01:30:34 2024 +0000
+
+    Fix infinite loop during module symbols initialization
+    
+    An infinite loop occured in mod_symname_hash_install() during module
+    symbols initialization on 6.13-rc1 kernel.
+    
+    Not sure which kernel patch caused this (probably execmem patches), a
+    gap region between a module text and another module's one has gone, i.e.
+    they became consecutive.  In this case, as we set a module's pseudo end
+    symbol to "base + size" value, it's equal to another module's pseudo
+    start symbol.  This and qsort() for st->ext_module_symbtable cause
+    region overlaps like this:
+    
+      sp      sp->value        sp->name
+      823ac68 ffffffffc0800000 _MODULE_TEXT_START_dm_mod
+      ...
+      8242080 ffffffffc0814ad0 __pfx_dm_devt_from_path
+      82420a8 ffffffffc0814ae0 dm_devt_from_path
+      82420d0 ffffffffc0815000 _MODULE_TEXT_START_libcrc32c  << same value
+      82420f8 ffffffffc0815000 __pfx_crc32c                  <<   and
+      8242120 ffffffffc0815000 _MODULE_TEXT_END_dm_mod       << overlap
+      8242148 ffffffffc0815010 crc32c
+      8242170 ffffffffc0815080 __pfx_libcrc32c_mod_fini
+      ...
+      8242238 ffffffffc0816000 _MODULE_TEXT_END_libcrc32c
+    
+    As a result, mod_symtable_hash_install_range() can add a module symbol
+    two times, which makes a self-loop.  This causes an infinite loop in
+    mod_symname_hash_install().
+    
+      Core was generated by `crash'.
+      #0  mod_symname_hash_install (spn=0x75e6bc0) at symbols.c:1236
+      1236                    if (!sp->name_hash_next ||
+      (gdb) p sp
+      $1 = (struct syment *) 0x75e6670
+      (gdb) p sp->name
+      $2 = 0x7c03573 "_MODULE_TEXT_START_libcrc32c"
+      (gdb) p sp->name_hash_next
+      $3 = (struct syment *) 0x75e6670  << self-loop
+    
+    To avoid this, fix module pseudo end symbols to "base + size - 1".
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 7c5c795b0d67456ad4690d4847ae2f4f73c335f3
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Dec 10 16:53:01 2024 +0800
+
+    Mark start of 8.0.7 development phase with version 8.0.6++
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
