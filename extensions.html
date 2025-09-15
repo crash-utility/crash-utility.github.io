@@ -857,8 +857,36 @@ Package website: <A HREF="https://github.com/k-hagio/crash-cacheutils">https://g
     <li>As of April 2024, tested/supported only on RHEL8/RHEL9 and not sure which upstream kernel is supported.
         For the latest information, see the package website above.</li>
     <br>
-    <a name=NEXT_EXTENSION_NAME>
+    <a name=SDINFO>
     <li>Author: Kazuhito Hagio&nbsp;&nbsp;&lt;k-hagio-ab@nec.com></li>
+  </ul>
+</td>
+</tr>
+
+<tr>
+<td ALIGN=CENTER>
+  <tt><b><A HREF="https://github.com/briston-dev/crash-diskutils/blob/main/scsi.c">scsi.c</a></b></tt>
+</td>
+<td ALIGN=CENTER VALIGN=CENTER>
+  <tt><b><A HREF="https://github.com/briston-dev/crash-diskutils/blob/main/readme.md">sdinfo</a></b></tt>
+</td>
+<td>
+  <ul>
+    <li>Displays Linux kernel's SCSI disk information, including devices, hosts, targets, and associated I/O requests  and SCSI commands. Support for NVMe devices is currently under development and will be added in upcoming releases.</li>
+    <br>
+    <li>To build the module from the top-level <I>crash-&lt;version&gt</I> directory, enter:
+      <br>
+      <tt>&nbsp;&nbsp;$ cp <i>&lt;path-to></i>/scsi.c scsi.mk extensions</tt><br>
+      <tt>&nbsp;&nbsp;$ make extensions</tt><br>
+      <br>
+    </li>
+    <li>Package website: <A HREF="https://github.com/briston-dev/crash-diskutils">https://github.com/briston-dev/crash-diskutils</A></li>
+    <br>
+    <li>Tested in rhel8, not work for kernel>=v6.4.
+        For the latest information, see the package website above.</li>
+    <br>
+    <a name=NEXT_EXTENSION_NAME>
+    <li>Author: Yao Sang&nbsp;&nbsp;&lt;sangyao@kylinos.cn></li>
   </ul>
 </td>
 </tr>
