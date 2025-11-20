@@ -1,0 +1,1216 @@
+commit 9cd43f5954a4b44d599b76937f674493c14ef20e
+Author: Tao Liu <ltao@redhat.com>
+Date:   Thu Nov 20 21:27:11 2025 +1300
+
+    crash-9.0.0 -> crash-9.0.1
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 82e65239aaf0607d45c6f0902495b432b76823ba
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Nov 19 15:36:29 2025 +1300
+
+    Add blk_mq_tag_set shared_tags check
+    
+    A regression of cmd dev -d/-D noticed on some vmcores as:
+    
+        dev: invalid structure member offset: blk_mq_tag_set_shared_tags
+             FILE: dev.c  LINE: 4468  FUNCTION: blk_mq_queue_tag_busy_iter()
+    
+        MAJOR GENDISK            NAME       REQUEST_QUEUE      TOTAL ASYNC  SYNC
+        [crash] error trace: 91aa85 => 91a552 => 94d6ba => 94d647
+    
+          94d647: OFFSET_verify.part.0+55
+          94d6ba: OFFSET_verify+42
+          91a552: get_diskio_1+2194
+          91aa85: display_all_diskio+1253
+    
+    The root cause is, though upstream kernel have defined BLK_MQ_F_TAG_HCTX_SHARED
+    as (1 << 3), the value might be set different, e.g. [1]. So a single
+    blk_mq_is_shared_tags() check is not sufficient. This patch will add shared_tags
+    member check within blk_mq_tag_set struct as an enhancment.
+    
+    [1]: https://gitlab.com/redhat/centos-stream/src/kernel/centos-stream-8/-/blob/c8s/include/linux/blk-mq.h?ref_type=heads#L321
+    
+    Fixes: 62486400d35b ("Add blk_mq shared tags support for dev -d/-D")
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 72e2776caf1ca41dffcc8aba11c55c636565725b
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Nov 19 17:06:32 2025 +1300
+
+    Revert "vmcoreinfo: read vmcoreinfo using 'vmcoreinfo_data' when unavailable in elf note"
+    
+    This patch will cause a regression on some x86_64 vmcores.
+    
+        $ crash -s vmcore vmlinux.gz
+        WARNING: vmcoreinfo is empty, will read from symbols
+        crash: cannot malloc vmcoreinfo buffer
+        crash: /var/tmp/vmlinux.gz_fWV3kA and vmcore do not match!
+    
+    The root cause is, in main.c, is_kdump() calls is_netdump(), which will
+    set pc->read_vmcoreinfo as vmcoreinfo_read_from_memory(), rather than
+    original vmcoreinfo_read_string().
+    
+    Later in machdep_init(PRE_SYMTAB), vmcoreinfo_read_from_memory() doesn't
+    get "relocate" string, so fails for set kaslr flag, then fails for
+    linux_banner detection:
+    
+        Thread 1 "crash" hit Breakpoint 2, verify_version ():
+        1096                if (!IS_KVADDR(linux_banner))
+        (gdb) p/x linux_banner
+        $4 = 0xffffffff81e00100
+    
+        crash> sym linux_banner
+        ffffffff9aa00100 (R) linux_banner
+    
+    As we can see with the patch applied, linux_banner got a wrong address.
+    So this patch currently is unsafe, and should be reverted before the fix.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit fbb2e9e2e38d58ccf3d596359b294d568d59ff2a
+Author: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+Date:   Tue Nov 11 23:30:07 2025 +0100
+
+    s390x: Add basic 'bt -e' support for s390x
+    
+    Add basic 'bt -e' support for s390x printing only interrupt frame and
+    related pt_regs, e.g:
+    
+      crash> bt -e
+      PID: 604      TASK: 7052a00           CPU: 1    COMMAND: "systemd-journal"
+       USER-MODE INTERRUPT FRAME at 38000003e98
+       pt_regs at 38000003f38:
+       PSW:  0705000180000000 000003ff8db0fa36 (user space)
+       GPRS: 00000000002f9112 000003ff00000000 ffffffffffffffda 000002aa2b4db520
+             000000000000003e ffffffffffffffff 00063ea900000007 0000000000000020
+             0000000000000140 000002aa2b4b5290 000003ff8e2e6b40 000000000000003e
+             000003ff8e17bcd0 000003ff8e2af018 000003ff8e089a02 000003ffe02f98f0
+    
+    Suggested-by: Heiko Carstens <hca@linux.ibm.com>
+    Signed-off-by: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+
+commit 8d8fb30fd7531c6468dac32f8a45b2cb2fb98e15
+Author: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+Date:   Tue Nov 11 23:30:06 2025 +0100
+
+    s390x: Expand bt output with PSW mode and pt_regs address
+    
+    Print the following line for the stack frame with zero backchain
+    pointer prior to printing PSW and GPRS:
+    
+      KERNEL-MODE INTERRUPT FRAME; pt_regs at <address>:
+    or
+      USER-MODE INTERRUPT FRAME; pt_regs at <address>:
+    
+    Suggested-by: Heiko Carstens <hca@linux.ibm.com>
+    Signed-off-by: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+
+commit 141d5421f907395c23b5ca9a6d9f856e91e3f98a
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Nov 4 12:44:38 2025 +1300
+
+    gdb: set req->typecode when type resolvation success
+    
+    In gdb_get_datatype(), the req->typecode is set as TYPE_CODE_UNDEF, and
+    it won't be set to other value in OP_TYPE case. If the type doesn't exist,
+    it will bail out in parse_expression() by exception catch of gdb_command_funnel(),
+    and req->typecode stays TYPE_CODE_UNDEF, which is expected. But if the type is
+    exist, it will be resolved by drillDownType(), so req->typecode shouldn't be
+    TYPE_CODE_UNDEF anymore, otherwise upper functions will regard this as a type
+    resolvation failure.
+    
+    This issue only affects eppic extensions because currently the only user
+    of req->tcb is eppic.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 3631b855cd92997866a18fcde2d505a52f3f2c3b
+Author: Tao Liu <ltao@redhat.com>
+Date:   Thu Nov 13 10:26:12 2025 +1300
+
+    Revert "eppic.patch: Add customized functions to eppic"
+    
+    This reverts commit 3fc8d4023c0d5dfbf21ea7cdce96a24ece00d4f2 because
+    the customized functions will be moved to eppic side[1]. So the
+    eppic.patch is no longer needed. Let's revert those to make a
+    clean code.
+    
+    [1]: https://github.com/lucchouina/eppic/pull/30
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 3d57b4b393558dd4b22312eef251af11bf6530f5
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Oct 28 16:56:14 2025 +0800
+
+    Fix for "set" command failure
+    
+    Recently we have observed some failures as below:
+    
+      crash> set 2276866
+      set: invalid kernel virtual address: 0  type: "stack contents"
+      set: read of stack at 0 failed
+    
+      crash> ps 2276866
+            PID    PPID  CPU       TASK        ST  %MEM      VSZ      RSS  COMM
+        2276866 2276750  47  ff3a19fbd3c80000  ZO   0.0        0        0  sh
+    
+    This is a regression issue that introduced by adding gdb stack unwind
+    support. When attempting to read from the stack, firstly, need to check
+    if the stack exists, otherwise it may fail in some corner cases. E.g:
+    there are some zombie processes(ZO) and the stack does not exist.
+    Furthermore this may also break the switching thread in gdb.
+    
+    With the patch:
+      crash> set 2276866
+          PID: 2276866
+      COMMAND: "sh"
+         TASK: ff3a19fbd3c80000  [THREAD_INFO: ff3a19fbd3c80000]
+          CPU: 47
+        STATE: EXIT_DEAD|EXIT_ZOMBIE
+    
+    Reported-by: Buland Kumar Singh <bsingh@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 7636c13cd137d31a4c7c7f2c0ff475294bb7883d
+Author: Aditya Gupta <adityag@linux.ibm.com>
+Date:   Thu Sep 18 18:24:10 2025 +0530
+
+    vmcoreinfo: read vmcoreinfo using 'vmcoreinfo_data' when unavailable in elf note
+    
+    Few vmcores don't have vmcoreinfo elf note, such as those created using
+    virsh-dump.
+    
+    On architectures such as PowerPC64, vmcoreinfo is mandatory to fetch the
+    first_vmalloc_address, for vmcores of upstream linux, since crash-utility commit:
+    
+        commit 5b24e363a898 ("get vmalloc start address from vmcoreinfo")
+    
+    Try reading from the 'vmcoreinfo_data' symbol instead, if the vmcoreinfo
+    crash tries to read in case of diskdump/netdump is empty/missing.
+    
+    The approach to read 'vmcoreinfo_data' was used for a live kernel, which can be
+    reused in the case of missing vmcoreinfo note also, as the
+    'vmcoreinfo_data' symbol is available with vmcore too
+    
+    Note though, till GDB interface is not initialised, reading from
+    vmcoreinfo_data symbol is not done, so behaviour is same as previously
+    with no vmcoreinfo (only till GDB interface is not initialised)
+    
+    Hence rename 'vmcoreinfo_read_string' in kernel.c to
+    'vmcoreinfo_read_from_memory', and use it in netdump.c and diskdump.c
+    too.
+    
+    Reported-by: Anushree Mathur <anushree.mathur@linux.ibm.com>
+    Tested-by: Anushree Mathur <anushree.mathur@linux.ibm.com>
+    Signed-off-by: Aditya Gupta <adityag@linux.ibm.com>
+
+commit 3fc8d4023c0d5dfbf21ea7cdce96a24ece00d4f2
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Oct 28 11:40:04 2025 +1300
+
+    eppic.patch: Add customized functions to eppic
+    
+    This patch will add the following functions to eppic:
+    
+    1) Allow main() as the entry for any eppic program. Previously only func()
+       which companied by func_help() & func_usage() is regarded as the main
+       entry of the eppic program. This constraint only makes sense for creating
+       a crash-like cmd. If users only want to create a oneshot run program for
+       fast testing, then the constraint is misleading. So this patch will add
+       main() as entry for eppic programs.
+    
+    2) Add new command "eppic" for oneshot run eppic programs. Previously eppic
+       expect programs to run as the form of crash-like cmd, and it is not
+       convenient for oneshot run programs. With "eppic" command, people can
+       use "edit -f" or any other editors to create eppic programs, then run
+       it via "eppic myfile.c".
+    
+    3) Add a template for any new eppic program files. If "edit -f" a new file, a
+       template with an example will be written into the new file. So users can
+       refer to it when writting any eppic programs.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 5a564c2adfda54467d6db01c31800070c270344c
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Oct 28 11:40:03 2025 +1300
+
+    extensions: Search all possible paths
+    
+    Search all possible paths for extensions. Previously if one path, e.g.
+    "/usr/lib64/crash/extensions" exists, but no extensions found within,
+    crash will not search any later paths, e.g. "./extensions". This patch
+    will let crash continue to search any later paths.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 536a0d78f1fa0838007806e222bf0eda08b83ecf
+Author: Austin Kim <austindh.kim@gmail.com>
+Date:   Wed Oct 22 11:46:19 2025 +0900
+
+    RISCV64: fix wrong information of PMD and PTE - SA39(4K page) support
+    
+    When running 'vtop address' command in RISC-V based vmcore, the base address
+    without applying offset for PMD and PTE is displayed. This is not correct
+    address for PMD and PTE.
+    
+    With this patch, the actual address for PMD and PTE with the valid offset
+    is printed:
+    
+    <Before>
+    crash> vtop 0xffffffff81c4f000
+    VIRTUAL           PHYSICAL
+    ffffffff81c4f000  41e4f000
+    
+    PAGE DIRECTORY: ffffffff81c4f000
+      PGD: ffffffff81c4fff0 => 4fffe801
+      PMD: 000000013fffa000 => 00000000107800e7
+      PTE: 41e00000 => ffffffff8166fea0
+    
+         PTE         PAGE: 0000000000000000 not present
+    
+    <After>
+    crash> vtop 0xffffffff81c4f000
+    VIRTUAL           PHYSICAL
+    ffffffff81c4f000  41e4f000
+    
+    PAGE DIRECTORY: ffffffff81c4f000
+      PGD: ffffffff81c4fff0 => 4fffe801
+      PMD: 000000013fffa070 => 00000000107800e7
+      PTE: 41e00278 => ffffffff8166fea0
+    
+         PTE         PAGE: 0000000000000000 not present
+    
+    Signed-off-by: Austin Kim <austindh.kim@gmail.com>
+
+commit 21bdb005dc582d1e1c3817ba64cc29c52cddec25
+Author: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+Date:   Mon Oct 27 18:04:56 2025 +0100
+
+    s390x: Always perform kernel address translation in vtop verbose mode.
+    
+    In s390x_kvtop() early return may take place despite the verbose
+    flag. Thus we can miss page-table walk information in the vtop output
+    for kernel virtual addresses.
+    Make sure that s390x_vtop() is always called for kernel virtual addresses
+    when the verbose flag is passed to s390x_kvtop() by do_vtop().
+    
+    Suggested-by: Heiko Carstens <hca@linux.ibm.com>
+    Signed-off-by: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+
+commit 0c55a29b2096b0a9bf3227d3ecc838d5e3349495
+Author: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+Date:   Mon Oct 27 18:04:55 2025 +0100
+
+    s390x: Remove redundant vmalloc_start check from s390x_kvtop()
+    
+    Since s390x IS_VMALLOC_ADDR() callback functions include non-zero
+    vmalloc_start check we can drop it from s390x_kvtop().
+    
+    Signed-off-by: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+
+commit 7debd8490c1b8b631a098a2b55d3f75d98e32114
+Author: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+Date:   Mon Oct 27 18:04:54 2025 +0100
+
+    s390x: Add non-zero vmalloc_start check to s390x_vr_IS_VMALLOC_ADDR()
+    
+    Update s390x_vr_IS_VMALLOC_ADDR() to include a non-zero vmalloc_start
+    check, making it consistent with s390x_generic_IS_VMALLOC_ADDR().
+    
+    Fixes: d0164e7e480a ("s390x: uncouple physical and virtual memory spaces")
+    Signed-off-by: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+
+commit 5190061bd7fee9009eb2d57bf68e3462b1a86ecc
+Author: Tao Liu <ltao@redhat.com>
+Date:   Fri Oct 24 17:25:06 2025 +1300
+
+    bpf: Implement ringbuf_map memory usage calculation
+    
+    This patch replicates the kernel code for bpf ringbuf_map mm usage
+    calculation.
+    
+      $ bpftool map create /sys/fs/bpf/rb0 type ringbuf key 0 value 0 entries $((1<<24)) name rb0
+    
+    Before:
+      crash> bpf -m 12
+       ID      BPF_MAP               BPF_MAP_TYPE           MAP_FLAGS
+       12  ffff8dc4d7c0ed00             RINGBUF              00000000
+           KEY_SIZE: 0  VALUE_SIZE: 0  MAX_ENTRIES: 16777216  MEMLOCK: (unknown)
+           NAME: "rb0"  UID: (unused)
+    
+    After:
+      crash> bpf -m 12
+       ID      BPF_MAP               BPF_MAP_TYPE           MAP_FLAGS
+       12  ffff8dc4d7c0ed00             RINGBUF              00000000
+           KEY_SIZE: 0  VALUE_SIZE: 0  MAX_ENTRIES: 16777216  MEMLOCK: 16855320
+           NAME: "rb0"  UID: (unused)
+    
+    Thus, the output will be the same as bpftool:
+    
+      $ bpftool map show id 12
+      12: ringbuf  name rb0  flags 0x0
+            key 0B  value 0B  max_entries 16777216  memlock 16855320B
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 7b7e3e2509ae79db493a24c5aa11b2d0b62540df
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Oct 7 16:52:40 2025 +1300
+
+    Fix the misleading uncompress error message
+    
+    The "unxz" is missing for uncompressing fail message.
+    
+    Resolves: https://github.com/crash-utility/crash/issues/220
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 37c1e2b212145417cb52e7046a79799aa36e1279
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Oct 24 10:56:50 2025 +0800
+
+    Add "log -R" to display human readable Rust symbol name
+    
+    Currently, the log command will display human readable Rust
+    symbol name by default if any, but, sometimes still want to
+    print the original messages from the log buffer(do not demangle).
+    
+    In addition, if the log buffer has lines like "_R ... +" which
+    are not Rust symbols unexpectedly, probably the output will be
+    missed, that is unexpected.
+    
+    To fix above cases, add "log -R" to display human readable Rust
+    symbol name, otherwise still print the original messages.
+    
+    With the patch:
+      crash> log -R
+      ...
+      [ 2174.289360] Tainted: [S]=CPU_OUT_OF_SPEC, [O]=OOT_MODULE, [E]=UNSIGNED_MODULE
+      [ 2174.297322] Hardware name: Intel Corporation S2600CWR/S2600CWR, BIOS SE5C610.86B.01.01.0018.072020161249 07/20/2016
+      [ 2174.308966] Call Trace:
+      [ 2174.311693]  <TASK>
+      [ 2174.314033]  dump_stack_lvl+0x5d/0x80
+      [ 2174.318125]  panic+0x156/0x32a
+      [ 2174.321539]  rust_panic::area_in_hp+0xf7/0x120 [rust_panic]
+      [ 2174.329700]  ? console_unlock+0x9c/0x140
+      [ 2174.334080]  ? irq_work_queue+0x2d/0x50
+      [ 2174.338352]  ? __pfx_init_module+0x10/0x10 [rust_panic]
+      [ 2174.344183]  <rust_panic::HelloPanic>::step_two+0x20/0xe0 [rust_panic]
+      [ 2174.353698]  ? _printk+0x6b/0x90
+      [ 2174.357303]  init_module+0x57/0xff0 [rust_panic]
+      [ 2174.362456]  ? __pfx_init_module+0x10/0x10 [rust_panic]
+      ...
+    
+    Link: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01652.html
+    Suggested-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit c62b31700e700251ff4d93302d96607ac8ef872a
+Author: Aureau, Georges (Kernel Tools ERT) <georges.aureau@hpe.com>
+Date:   Tue Sep 30 06:13:04 2025 +0000
+
+    Fix "mount" MNT_CURSOR entries (kernels 5.8-6.7)
+    
+    crash> mount > mount.out
+    WARNING: cannot get super_block from vfsmnt: 0xff35d65eb1cc1820
+    crash> struct mount.mnt.mnt_sb,mnt.mnt_flags -x 0xff35d65eb1cc1820
+      mnt.mnt_sb = 0x0,
+      mnt.mnt_flags = 0x10000000,
+    
+    When crashing with running "findmnt" commands, the mount list will
+    have entries with mnt.mnt_flags==MNT_CURSOR (and mnt.mnt_sb==NULL).
+    Such entries should be skipped without errors.
+    
+    Signed-off-by: Georges Aureau <georges.aureau@hpe.com>
+
+commit be38ac1d462a969e3e91aea5c38ea5dbecf36373
+Author: Aureau, Georges (Kernel Tools ERT) <georges.aureau@hpe.com>
+Date:   Tue Sep 30 04:41:09 2025 +0000
+
+    Fix "mount <address>" fail when "super_block.s_files" unavaliable
+    
+    The command "mount <address>" is failing on kernels without "super_block.s_files":
+    
+    crash> mount ff35d61d80200000
+    mount: the super_block.s_files linked list does not exist in this kernel
+    mount: -f option not supported or applicable on this architecture or kernel
+    
+    The MOUNT_PRINT_FILES flags should only be passed when "super_block.s_files"
+    is available.
+    
+    Signed-off-by: Georges Aureau <georges.aureau@hpe.com>
+
+commit 8f1f826e41107fe910e950dfc25f5685f1d33d28
+Author: Aureau, Georges (Kernel Tools ERT) <georges.aureau@hpe.com>
+Date:   Tue Sep 23 08:08:15 2025 +0000
+
+    Fix get_pathname() not handling stacked mounts
+    
+    This get_pathname() issue can be duplicated as follow:
+    
+    sudo mkdir -p /tmp/test
+    sudo mount -t tmpfs tmpfs /tmp/test
+    sudo mount --make-private /tmp/test
+    sudo mount --bind /tmp/test /tmp/test
+    sudo mount --bind /tmp/test /tmp/test
+    sudo mount -o remount,ro /tmp/test
+    
+    $ sudo crash /usr/lib/debug/boot/vmlinux-$(uname -r)
+    crash> mount | grep tmpfs
+    ffff9648e7febc00 ffff9648d91ac800 tmpfs  tmpfs     /tmp/test
+    ffff9648c9281380 ffff9648d91ac800 tmpfs  tmpfs     /tmp/test/
+    ffff9648c8e9a700 ffff9648d91ac800 tmpfs  tmpfs     /
+    
+    The last mount is not printed properly, and this is impacting diagnostic
+    when looking at vmcore from complex containers mount environments.
+    
+    Signed-off-by: Georges Aureau <georges.aureau@hpe.com>
+
+commit 069ab8955bcdbd56d129581ace39a0d2cd15ec8b
+Author: jianyun.gao <jianyungao89@gmail.com>
+Date:   Thu Sep 18 21:48:01 2025 +0800
+
+    Optimize extensions's compiler from gcc to $(CC)
+    
+    Change the default compiler of the extensions from the fixed gcc
+    to $(CC) passed in by the upper layer Makefile,
+    to facilitate cross_compile.
+    
+    Signed-off-by: jianyun.gao <jianyungao89@gmail.com>
+
+commit 0df76345db8f7bb2ce70138eee65b71e157b280a
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue Sep 16 16:05:32 2025 +0800
+
+    Fix for log command printed a couple of empty lines
+    
+    The log command printed a couple of empty lines (only timestamps), which
+    was caused by the commit  99bb57ac98af ("Enable resolving mangled Rust
+    symbol in lockless ring buffer"), E.g:
+    
+      $ diff -u log.pre log.cur
+      --- log.pre     2025-09-16 13:14:31.022206514 +0900
+      +++ log.cur     2025-09-16 13:14:56.220390987 +0900
+      @@ -210,7 +210,7 @@
+        [    0.169375] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 1911260446275000 ns
+        [    0.169375] futex hash table entries: 1024 (order: 4, 65536 bytes, linear)
+        [    0.169375] pinctrl core: initialized pinctrl subsystem
+       -[    0.172925] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+       +[    0.172925]
+        [    0.172983] DMA: preallocated 512 KiB GFP_KERNEL pool for atomic allocations
+        [    0.172986] DMA: preallocated 512 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+        [    0.172988] DMA: preallocated 512 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+      @@ -807,7 +807,7 @@
+        [771438.513231]  entry_SYSCALL_64_after_hwframe+0x72/0xdc
+        [771438.513423] RIP: 0033:0x7fbd9f8fda57
+        [771438.513576] Code: 0f 00 f7 d8 64 89 02 48 c7 c0 ff ff ff ff eb b7 0f 1f 00 f3 0f 1e fa 64 8b 04 25 18 00 00 00 85 c0 75 10 b8 01 00 00 00 0f 05 <48> 3d 00 f0 ff ff 77 51 c3 48 83 ec 28 48 89 54 24 18 48 89 74 24
+       -[771438.514251] RSP: 002b:00007ffee0de2b98 EFLAGS: 00000246 ORIG_RAX: 0000000000000001
+       +[771438.514251]
+        [771438.514534] RAX: ffffffffffffffda RBX: 0000000000000002 RCX: 00007fbd9f8fda57
+        [771438.514800] RDX: 0000000000000002 RSI: 00005647ccc0a330 RDI: 0000000000000001
+        [771438.515066] RBP: 00005647ccc0a330 R08: 0000000000000003 R09: 0000000000000000
+    
+    This is because the strchrnul() returns a pointer to the null byte
+    instead NULL if the char to be searched is not in the string. Given
+    that, let's replace the strchrnul() with the strrchr().
+    
+    Fixes: 99bb57ac98af ("Enable resolving mangled Rust symbol in lockless ring buffer")
+    Reported-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 9495fa7c1a38f4547e2142228f08b4146673062b
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Sep 15 17:37:47 2025 +0800
+
+    Fix a compilation error on the old gcc version 8.5.0
+    
+    The current issue occured on gcc version 8.5.0, can not been
+    seen in the latest gcc version.
+    
+     $ make -j8 lzo
+      symbols.c: In function ‘namespace_ctl’:
+      symbols.c:3358:3: error: a label can only be part of a statement and a declaration is not a statement
+         char demangled[BUFSIZE] = {0};
+         ^~~~
+      make[5]: *** [Makefile:403: symbols.o] Error 1
+      make[5]: *** Waiting for unfinished jobs....
+      ...
+      crash build failed
+      ...
+    
+    Let's put the declaration at the beginning of this function to
+    fix such cases.
+    
+    Reported-by: Tao Liu <ltao@redhat.com>
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 99bb57ac98afd89fcf23f0c8bc637821dcbd278f
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Mon Sep 8 16:42:50 2025 +0800
+
+    Enable resolving mangled Rust symbol in lockless ring buffer
+    
+    Without the patch:
+      crash> log
+      ...
+      [ 2174.308966] Call Trace:
+      [ 2174.311693]  <TASK>
+      [ 2174.314033]  dump_stack_lvl+0x5d/0x80
+      [ 2174.318125]  panic+0x156/0x32a
+      [ 2174.321539]  _RNvCscb18lrEyTSA_10rust_panic10area_in_hp+0xf7/0x120 [rust_panic]
+      [ 2174.329700]  ? console_unlock+0x9c/0x140
+      [ 2174.334080]  ? irq_work_queue+0x2d/0x50
+      [ 2174.338352]  ? __pfx_init_module+0x10/0x10 [rust_panic]
+      [ 2174.344183]  _RNvMCscb18lrEyTSA_10rust_panicNtB2_10HelloPanic8step_two+0x20/0xe0 [rust_panic]
+      [ 2174.353698]  ? _printk+0x6b/0x90
+      ...
+    
+    With the patch:
+      crash> log
+      ...
+      [ 2174.308966] Call Trace:
+      [ 2174.311693]  <TASK>
+      [ 2174.314033]  dump_stack_lvl+0x5d/0x80
+      [ 2174.318125]  panic+0x156/0x32a
+      [ 2174.321539]  rust_panic::area_in_hp+0xf7/0x120 [rust_panic]
+      [ 2174.329700]  ? console_unlock+0x9c/0x140
+      [ 2174.334080]  ? irq_work_queue+0x2d/0x50
+      [ 2174.338352]  ? __pfx_init_module+0x10/0x10 [rust_panic]
+      [ 2174.344183]  <rust_panic::HelloPanic>::step_two+0x20/0xe0 [rust_panic]
+      [ 2174.353698]  ? _printk+0x6b/0x90
+      ...
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit a5942e3acfd9330d101cc65ef2e19e627233ddf6
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Aug 27 12:06:39 2025 +0800
+
+    Enable demangling a mangled Rust support
+    
+    Without the patch:
+      crash> bt
+      PID: 3520     TASK: ffff8f240f670000  CPU: 1    COMMAND: "insmod"
+       #0 [ffffd08c4f063a20] machine_kexec at ffffffff9575e60e
+       #1 [ffffd08c4f063a40] __crash_kexec at ffffffff958db711
+       #2 [ffffd08c4f063b00] panic at ffffffff9560cede
+       #3 [ffffd08c4f063b80] _RNvCscb18lrEyTSA_10rust_panic10area_in_hp at ffffffffc07fe107 [rust_panic]
+       #4 [ffffd08c4f063c20] _RNvMCscb18lrEyTSA_10rust_panicNtB2_10HelloPanic8step_two at ffffffffc07fe160 [rust_panic]
+          ...
+    
+      crash> sym _RNvCscb18lrEyTSA_10rust_panic10area_in_hp
+      ffffffffc07fe010 (t) _RNvCscb18lrEyTSA_10rust_panic10area_in_hp [rust_panic] /root/linux-6.16.3/samples/rust/rust_panic.rs: 22
+    
+    With the patch:
+      crash> bt
+      PID: 3520     TASK: ffff8f240f670000  CPU: 1    COMMAND: "insmod"
+       #0 [ffffd08c4f063a20] machine_kexec at ffffffff9575e60e
+       #1 [ffffd08c4f063a40] __crash_kexec at ffffffff958db711
+       #2 [ffffd08c4f063b00] panic at ffffffff9560cede
+       #3 [ffffd08c4f063b80] rust_panic::area_in_hp at ffffffffc07fe107 [rust_panic]
+       #4 [ffffd08c4f063c20] <rust_panic::HelloPanic>::step_two at ffffffffc07fe160 [rust_panic]
+          ...
+    
+      crash> sym "rust_panic::area_in_hp"
+      ffffffffc07fe010 (t) rust_panic::area_in_hp [rust_panic] /root/linux-6.16.3/samples/rust/rust_panic.rs: 22
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit bd977d8d3a1f5f859f3ee83b0b009de6d35f5a2b
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Aug 27 12:06:38 2025 +0800
+
+    Add a rustfilt command to demangle a mangled Rust symbol
+    
+    For example:
+      crash> rustfilt _RNvXsh_NtCskljHLvcz3xy_4core3fmteNtB5_7Display3fmt
+      <str as core::fmt::Display>::fmt
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 33f492f6443e5b5e1d260653391446f469c45601
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Sep 5 11:52:18 2025 +0800
+
+    Fix the segfault issue caused by "dis -s" command
+    
+    I did some tests on the vmcore with Rust enabled, and found that
+    the "dis -s" command may cause a segfault:
+    
+      crash> dis -s _RNvCscb18lrEyTSA_10rust_panic10area_in_hp
+      Enable debuginfod for this session? (y or [n])
+      FILE: rust_panic.rs
+      LINE: 22
+    
+      Segmentation fault         (core dumped) ./crash /home/lijiang/src/rust/6.16.3-vmcore-rust/vmlinux /home/lijiang/src/rust/6.16.3-vmcore-rust/vmcore
+    
+    gdb calltrace:
+      (gdb) bt
+      #0  decimal (s=0x0, count=count@entry=0) at tools.c:1113
+      #1  0x00000000008eea96 in list_source_code (req=0x1081860 <shared_bufs>, count_entered=0) at kernel.c:1578
+      #2  cmd_dis () at kernel.c:2052
+      #3  0x000000000086b468 in exec_command () at main.c:893
+      #4  0x000000000086b6aa in main_loop () at main.c:840
+      #5  0x00000000006b950c in captured_main (data=data@entry=0x7ffe049a3bd0) at main.c:1374
+      #6  gdb_main (args=args@entry=0x7ffe049a3c10) at main.c:1407
+      #7  0x00000000006b9579 in gdb_main_entry (argc=2, argv=argv@entry=0x7ffe049a3db8) at main.c:1434
+      #8  0x000000000090529e in gdb_main_loop (argc=<optimized out>, argc@entry=3, argv=argv@entry=0x7ffe049a3db8)
+          at gdb_interface.c:81
+      #9  0x0000000000438344 in main (argc=3, argv=0x7ffe049a3db8) at main.c:721
+      (gdb)
+    
+    This is because the decimal() tried to dereference a NULL pointer in the
+    list_source_code() path, when the source code is not available. Given
+    that, let's add a check to fix such cases.
+    
+    With the patch:
+      crash> dis -s _RNvCscb18lrEyTSA_10rust_panic10area_in_hp
+      Enable debuginfod for this session? (y or [n])
+      FILE: rust_panic.rs
+      LINE: 22
+    
+      dis: _RNvCscb18lrEyTSA_10rust_panic10area_in_hp: source code is not available
+    
+      crash>
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 4e848b2b7d38af75c192a2cd288d74e54a0df7c3
+Author: Ajay Kaher <ajay.kaher@broadcom.com>
+Date:   Sat Aug 30 13:19:08 2025 +0000
+
+    vmware_guestdump: support segment registers
+    
+    adding support for segment registers for vmware guest dumps.
+    
+    diff from v1:
+    - rebased, so that git am apply this patch.
+    
+    Signed-off-by: Ajay Kaher <ajay.kaher@broadcom.com>
+
+commit 4f2426de18e93d75d4ac8c6cfbc81551618afc20
+Author: Ajay Kaher <ajay.kaher@broadcom.com>
+Date:   Sat Aug 30 13:19:07 2025 +0000
+
+    vmware_vmss: support segment registers
+    
+    adding support for segment registers for vmware vmss dumps.
+    
+    diff from v1:
+    - modified dump_registers_for_vmss_dump() to remove compiler warning.
+    
+    Signed-off-by: Ajay Kaher <ajay.kaher@broadcom.com>
+
+commit b3c8d98691f84f0f85d7b177585c1612fa7bdd0d
+Author: Austin Kim <austindh.kim@gmail.com>
+Date:   Fri Aug 29 11:17:43 2025 +0900
+
+    RISCV64: Add 'PAGE DIRECTORY' property to the 'vtop' command
+    
+    Currently, 'vtop' command does not include 'PAGE DIRECTORY' information for
+    RISC-V-based vmcores. Since 'PAGE DIRECTORY' is used as the root page table,
+    we need this information. Note that Arm64, Arm32 and x86 vmcore shows
+    'PAGE DIRECTORY' for 'vtop' command.
+    
+    (before)
+    crash> vtop 0xffffffff80d8e1e0
+    VIRTUAL           PHYSICAL
+    ffffffff80d8e1e0  40f8e1e0
+    
+      PGD: ffffffff81c4fff0 => 4fffe801
+      PMD: 000000013fffa000 => 00000000103800eb
+      PTE: 40e00000 => b35030414c583
+     PAGE: 002cd40c10531000
+    
+         PTE          PHYSICAL     FLAGS
+    b35030414c583  2cd40c10531000  (PRESENT|READ|DIRTY|SOFT)
+    
+    (after)
+    crash> vtop 0xffffffff80d8e1e0
+    VIRTUAL           PHYSICAL
+    ffffffff80d8e1e0  40f8e1e0
+    
+    PAGE DIRECTORY: ffffffff81c4f000
+      PGD: ffffffff81c4fff0 => 4fffe801
+      PMD: 000000013fffa000 => 00000000103800eb
+      PTE: 40e00000 => b35030414c583
+     PAGE: 002cd40c10531000
+    
+         PTE          PHYSICAL     FLAGS
+    b35030414c583  2cd40c10531000  (PRESENT|READ|DIRTY|SOFT)
+    
+    Signed-off-by: Austin Kim <austindh.kim@gmail.com>
+
+commit d2fb3f62861355154b98a09cabe330dc3c4e5443
+Author: Pnina Feder <pnina.feder@mobileye.com>
+Date:   Thu Jul 31 14:36:15 2025 +0300
+
+    Support running on X86_64 with RISCV target
+    
+    Signed-off-by: Pnina Feder <pnina.feder@mobileye.com>
+
+commit 62486400d35b258e4e3c40c4bf0daedc231f835a
+Author: Tao Liu <ltao@redhat.com>
+Date:   Fri Jun 27 23:30:59 2025 +1200
+
+    Add blk_mq shared tags support for dev -d/-D
+    
+    When blk_mq shared tags enabled for devices like scsi, the IO status is
+    incorrect, e.g:
+    
+        crash> dev -d
+        MAJOR GENDISK            NAME       REQUEST_QUEUE      TOTAL ASYNC  SYNC
+            8 ffff90528df86000   sda        ffff9052a3d61800     144   144     0
+            8 ffff905280718c00   sdb        ffff9052a3d63c00      48    48     0
+    
+        crash> epython rqlist
+        ffff90528e94a5c0 sda      is unknown, deadline:  89.992 (90)  rq_alloc:   0.196
+        ffff90528e92f700 sda      is unknown, deadline:  89.998 (90)  rq_alloc:   0.202
+        ffff90528e95ccc0 sda      is unknown, deadline:  89.999 (90)  rq_alloc:   0.203
+        ffff90528e968bc0 sdb      is unknown, deadline:  89.997 (90)  rq_alloc:   0.201
+    
+    The root cause is: for shared tags case, only the shared tags are put
+    into count. Without this patch, tags of all the hw_ctx are counted,
+    which is incorrect.
+    
+    After apply the patch:
+    
+        crash> dev -d
+        MAJOR GENDISK            NAME       REQUEST_QUEUE      TOTAL  READ WRITE
+            8 ffff90528df86000   sda        ffff9052a3d61800       3     3     0
+            8 ffff905280718c00   sdb        ffff9052a3d63c00       1     1     0
+    
+    This patch makes the following modification:
+    1) blk_mq shared tag support.
+    2) Function renaming: queue_for_each_hw_ctx -> blk_mq_queue_tag_busy_iter,
+       because the latter is more close to the corresponding kernel function.
+    3) Extract a new queue_for_each_hw_ctx() function to be called for both
+       shared-tags case and the hw_ctx case.
+    
+    Note:
+    The patch is safe for earlier kernels which have no blk_mq shared tags
+    implemented, because the blk_mq_is_shared_tags() check will exit safely.
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 2c69f93e59c6b2efac5bae9f7891dbe1e0094fdd
+Author: Shivang Upadhyay <shivangu@linux.ibm.com>
+Date:   Mon Jul 21 13:47:33 2025 +0530
+
+    gdb: Disable DT_DEBUG lookup by GDB inside the vmcore
+    
+    Crash with GDB 16.2, the following warnings are printed:
+    
+    crash>
+    crash: page excluded: kernel virtual address: c0000000022d6098  type: "gdb_readmem_callback"
+    crash: page excluded: kernel virtual address: c0000000022d6098  type: "gdb_readmem_callback"
+    
+    This occurs because the elf_locate_base function in GDB 16.2
+    attempts to read the address of the dynamic linker runtime
+    structure, which is present in the .dynamic section of the
+    executable. However, this section may be excluded from the
+    dump by makedumpfile.
+    
+    The repeated calls to elf_locate_base were introduced by gdb
+    commit [1] aebb370 ("gdb, solib-svr4: support namespaces in
+    DSO iteration") via svr4_iterate_over_objfiles_in_search_order.
+    
+    To check whether the kernel includes DT_DEBUG information,
+    prints were added inside crash::xfer_partial, which is
+    called through elf_locate_base when reading from vmcore.
+    Even when running crash on /proc/kcore, all output data was
+    zero. This confirms that DT_DEBUG information is never
+    present in the kernel image.
+    
+    `mod -S` continues to function correctly after the following
+    patch:
+    
+    ...
+    crash> mod -S
+    Enable debuginfod for this session? (y or [n])
+         MODULE       NAME                             TEXT_BASE         SIZE  OBJECT FILE
+    c0080000004a0300  dm_log                        c008000000480000   196608  XXX/lib/modules/5.14.0-592.el9.ppc64le/kernel/drivers/md/dm-log.ko
+    c0080000006d1100  sd_mod                        c008000000580000   196608  XXX/lib/modules/5.14.0-592.el9.ppc64le/kernel/drivers/scsi/sd_mod.ko
+    c0080000005c0080  dm_region_hash                c0080000005a0000   196608  XXX/lib/modules/5.14.0-592.el9.ppc64le/kernel/drivers/md/dm-region-hash.ko
+    c008000000770700  sg                            c008000000620000   262144  XXX/lib/modules/5.14.0-592.el9.ppc64le/kernel/drivers/scsi/sg.ko
+    c008000000660500  dm_mirror                     c008000000640000   196608  XXX/lib/modules/5.14.0-592.el9.ppc64le/kernel/drivers/md/dm-mirror.ko
+    ...
+    
+    Commit e906eaca2b1a ("Fix the issue of "page excluded"
+    messages flooding") attempted fix this by suppressing these
+    warnings for regular users, but the warnings still appear
+    when crash is started in debug mode.
+    
+    To fix this, remove the DT_DEBUG read call, from the
+    elf_locate_base function in GDB that tries to read the
+    .dynamic section, as this information is not useful for
+    debugging kernel images in either dump or live kernel
+    scenarios.
+    
+    [1] https://sourceware.org/git/?p=binutils-gdb.git;a=commit;h=aebb370
+    
+    Cc: Tao liu <ltao@redhat.com>
+    Cc: Lianbo Jiang <lijiang@redhat.com>
+    Cc: Sourabh Jain <sourabhjain@linux.ibm.com>
+    Signed-off-by: shivang.upadhyay <shivangu@linux.ibm.com>
+
+commit 31a69d378efb4319a5b9ef8cf3d7a93030f5c863
+Author: Ming Wang <wangming01@loongson.cn>
+Date:   Mon Jun 9 11:03:02 2025 +0800
+
+    Fix crash initialization failure on LoongArch with recent GDB versions
+    
+    The crash tool failed to initialize on LoongArch64 when using
+    GDB 16.2 (and likely other recent GDB versions that have enhanced
+    LoongArch support) due to the error:
+    "fatal error: buffer size is not enough to fit register value".
+    
+    This occurs in supply_registers() because GDB now correctly
+    reports the size of LoongArch LASX (256-bit) vector registers
+    (xr0-xr31) as 32 bytes. The `regval` buffer in `crash_target.c`
+    was previously fixed at 16 bytes.
+    
+    This patch increases the `regval` buffer size to 32 bytes to
+    accommodate the largest LoongArch registers reported by GDB.
+    This allows crash to initialize successfully.
+    
+    Signed-off-by: Ming Wang <wangming01@loongson.cn>
+
+commit 6642b2729067399696f8f24f29267b3483d895c6
+Author: Tao Liu <ltao@redhat.com>
+Date:   Tue Jul 8 13:26:38 2025 +1200
+
+    gdb: Fix a regression for eppic extension on gdb-16.2
+    
+    There is a regression found when testing eppic extension on gdb-16.2
+    crash:
+    
+       crash> cgroup
+       /root/.eppic/cgroup.c : line 99 : Error: undefined variable 'cgroup_roots'
+    
+    The root cause is when doing gdb upgrading, the replacement of
+    gdb_get_datatype() is incorrect:
+    
+    The original gdb-10.2 version:
+    
+       long value = SYMBOL_VALUE(expr->elts[2].symbol);
+    
+    The incorrect gdb-16.2 replacement:
+    
+       long value = value_as_long(expr->evaluate());
+    
+    According to gdb/tracepoint.c, the correct gdb-16.2 replacement should be:
+    
+       symbol *sym;
+       expr::var_value_operation *vvop
+         = (gdb::checked_static_cast<expr::var_value_operation *>
+            (exp->op.get ()));
+       sym = vvop->get_symbol ();
+       long value = sym->value_longest ();
+    
+    Otherwise, the value_as_long() will throw an exception when trying to
+    convert a struct into long, such as "cgroup_roots". The reason why this
+    issue only observed on crash extensions, is the faulty code block
+    triggered with "req->tcb", which is a callback for gdb_interface(), and
+    the callback is used by eppic extension, but the normal crash internal calls
+    hardly use it.
+    
+    After:
+       crash> cgroup
+       0:/user.slice/user-1000.slice/session-2.scope
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 6167a55b227db61eb52c2a4f96f44fc559a8b1d0
+Author: Charles Haithcock <chaithco@redhat.com>
+Date:   Fri Jul 18 16:14:25 2025 -0600
+
+    doc: Update requirements for building on Fedora
+    
+    Attempting to build on Fedora fails with the following error;
+    
+    $ make
+    TARGET: RISCV64
+     CRASH: 9.0.0++
+       GDB: 16.2
+    
+    Saving 'gdb-16.2.tar.gz'
+    [...]
+    checking for the correct version of gmp.h... no
+    configure: error: Building GDB requires GMP 4.2+, and MPFR 3.1.0+.
+    Try the --with-gmp and/or --with-mpfr options to specify
+    their locations.  If you obtained GMP and/or MPFR from a vendor
+    distribution package, make sure that you have installed both the libraries
+    and the header files.  They may be located in separate packages.
+    make[2]: *** No targets specified and no makefile found.  Stop.
+    
+    crash build failed
+    
+    make[1]: *** [Makefile:316: gdb_merge] Error 1
+    make: *** [Makefile:307: all] Error 2
+    
+    Installing gmp-devel and mpfr-devel fixed this, so this patch updates the
+    requirements for building on Fedora.
+
+commit 145cc6a75f24dfce2e644b620b3afb6de04cadfd
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Jul 9 17:41:12 2025 +1200
+
+    x86_64: filter unwanted warning message for "bt -T" cmd
+    
+    After patch "x86_64: Add gdb multi-stack unwind support" applied, a
+    warning message is observed for "bt -T" cmd:
+    
+        crash> bt -T
+        bt: seek error: kernel virtual address: fffffffffffffffb  type: "gdb_readmem_callback"
+        [ffffbaebc60d6fa8] srso_return_thunk at ffffffff82246fa5
+        ...
+    
+    The root cause is, "bt -T" will set BT_TEXT_SYMBOLS_ALL for bt->flags,
+    and eip is set to be 0 in kernel.c:back_trace(). Later in
+    x86_64_low_budget_back_trace_cmd(), eip - 5, or 0xfffffffffffffffb is
+    used for address disassembly by gdb "x/1i 0x%lx". This address is invalid so
+    the warning message is output.
+    
+    In fact, multi-stack unwind isn't designed for "bt -T" and eip = 0 case.
+    To avoid the warning message, let's simply bypass the "bt -T" case for
+    x86_64. Other archs(arm64/ppc64) aren't affected by the issue because
+    the gdb "x/1i 0x%lx" are not applied on those archs.
+    
+    After apply the patch:
+    
+        crash> bt -T
+        [ffffbaebc60d6fa8] srso_return_thunk at ffffffff82246fa5
+        ...
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 7e8a2796580d992ed19b2e49b5d555e432303e96
+Author: k-hagio-ab@nec.com <k-hagio-ab@nec.com>
+Date:   Tue Jun 17 06:08:52 2025 +0000
+
+    Fix "kmem -p" option on Linux 6.16-rc1 and later kernels
+    
+    Kernel commit acc53a0b4c156 ("mm: rename page->index to
+    page->__folio_index"), which is contained in Linux 6.16-rc1 and later
+    kernels, renamed the member.  Without the patch, the "kmem -p" option
+    fails with the following error:
+    
+      kmem: invalid structure member offset: page_index
+            FILE: memory.c  LINE: 6016  FUNCTION: dump_mem_map_SPARSEMEM()
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit e906eaca2b1a77fe9f8ba512484b4e914c303f11
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Wed Jun 11 11:19:01 2025 +0800
+
+    Fix the issue of "page excluded" messages flooding
+    
+    The current issue is only observed on PPC64le machine when loading crash,
+    E.g:
+      ...
+      crash: page excluded: kernel virtual address: c0000000022d6098  type: "gdb_readmem_callback"
+      crash: page excluded: kernel virtual address: c0000000022d6098  type: "gdb_readmem_callback"
+      ...
+      crash>
+    
+    And this issue can not be reproduced on crash 8, which only occurred
+    after the gdb-16.2 upgrade(see commit dfb2bb55e530).
+    
+    So far I haven't found out why it always reads the same address(excluded
+    page) many times, anyway, crash tool should avoid flooding messages firstly,
+    similarly let's use the same debug level(8) such as the read_diskdump()(see
+    diskdump.c).
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 0c14080b7d7bacadba3611568bd87b347677fa12
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Jun 25 16:02:03 2025 +1200
+
+    ppc64: Add gdb multi-stack unwind support
+    
+    Please note, there is a known issue which some ppc cannot stack unwind
+    successfully as:
+    
+        crash> bt
+        PID: 2        TASK: c000000004797f80  CPU: 0    COMMAND: "kthreadd"
+         #0 [c00000000484fbc0] _end at c00000000484fd70  (unreliable)
+         #1 [c00000000484fd70] __switch_to at c00000000001fabc
+         #2 [c00000000484fdd0] __schedule at c0000000011ca9dc
+         #3 [c00000000484feb0] schedule at c0000000011caeb0
+         #4 [c00000000484ff20] kthreadd at c0000000001af6c4
+         #5 [c00000000484ffe0] start_kernel_thread at c00000000000ded8
+        crash> gdb bt
+        #0  0xc00000000484fd70 in ?? ()
+        gdb: gdb request failed: bt
+    
+    This has nothing to do with bt/gdb bt, see root cause in [1][2].
+    
+    [1]: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01124.html
+    [2]: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01139.html
+    
+    Co-developed-by: Alexey Makhalov <alexey.makhalov@broadcom.com>
+    Co-developed-by: Tao Liu <ltao@redhat.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 08271e45e4ea6263fc2957d1e876becd6cfc1a0d
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Jun 25 16:02:02 2025 +1200
+
+    arm64: Add gdb multi-stack unwind support
+    
+    Co-developed-by: Alexey Makhalov <alexey.makhalov@broadcom.com>
+    Co-developed-by: Tao Liu <ltao@redhat.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 7b488818107fff9f92e9778749d0046f2024e6af
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Jun 25 16:02:01 2025 +1200
+
+    x86_64: Add gdb multi-stack unwind support
+    
+    Whenever extra stack is found, a user_regs structure is allocated and
+    regs value copied there. Later the values will be retrived by
+    get_current_task_reg() by given the thread's tid, aka the index of
+    stack.
+    
+    Co-developed-by: Alexey Makhalov <alexey.makhalov@broadcom.com>
+    Co-developed-by: Tao Liu <ltao@redhat.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit d3ef6e456629fc5711708a88872304da5159c1c6
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Jun 25 16:02:00 2025 +1200
+
+    Call cmd_bt silently after "set pid"
+    
+    Cmd bt will list multi-stacks of one task. After we "set <pid>" switch
+    context to one task, we first need a bt call to detect the multi-stacks,
+    however we don't want any console output from it, so a nullfp is used for
+    output receive. The silent bt call is only triggered once as part of task
+    context switch by cmd set.
+    
+    A array of user_regs pointers is reserved for each supported arch. If one
+    extra stack found, a user_regs structure will be allocated for storing regs
+    value of the stack.
+    
+    Co-developed-by: Alexey Makhalov <alexey.makhalov@broadcom.com>
+    Co-developed-by: Tao Liu <ltao@redhat.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 099f74640c965cd9c0e3620b9b5a0367b81a4e33
+Author: Tao Liu <ltao@redhat.com>
+Date:   Wed Jun 25 16:01:59 2025 +1200
+
+    Add multi-threads support in crash target
+    
+    Previously, only one thread is created in crash target by [1]. And this one
+    thread will work as the common container for different tasks whenever
+    "set <pid>" to it. Its tid number is 0 and will never be deleted.
+    
+    In order to support multi-stacks, we enable multi-threads in crash
+    target. Each thread will represent one stack, and "info threads" will
+    list all available stacks, "thread <id>" will switch to it.
+    
+    Since multi-stacks is task binded, each task switching will trigger
+    a thread delete of those tid number other than 0. In addition, we will
+    pass the tid number to each arch's get_current_task_reg(), in order to
+    retrive the regs value of the specific stack.
+    
+    [1]: https://www.mail-archive.com/devel@lists.crash-utility.osci.io/msg01085.html
+    
+    Co-developed-by: Alexey Makhalov <alexey.makhalov@broadcom.com>
+    Co-developed-by: Tao Liu <ltao@redhat.com>
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit 6eb51d8284aaca9cc882ddb1b9e135c708abbaa4
+Author: Stephen Brennan <stephen.s.brennan@oracle.com>
+Date:   Fri May 2 13:18:17 2025 -0700
+
+    Fix incorrect task state during exit
+    
+    task_state() assumes that exit_state is a unsigned long, when in
+    reality, it has been declared as an int since 97dc32cdb1b53 ("reduce
+    size of task_struct on 64-bit machines"), in Linux 2.6.22. So on 64-bit
+    machines, task_state() reads 8 bytes rather than 4, and gets the wrong
+    exit_state value by including the next field.
+    
+    This has gone unnoticed because directly after exit_state comes
+    exit_code, which is generally zero while the task is alive. When the
+    exit_code is set, exit_state is usually set not long after. Since
+    task_state_string() only checks whether exit_state bits are set, it
+    never notices the presence of the exit code inside of the state.
+    
+    But this leaves open a window during the process exit, when the
+    exit_code has been set (in do_exit()), but the exit_state has not (in
+    exit_notify()). In this case, crash reports a state of "??", but in
+    reality, the task is still running -- it's just running the exit()
+    system call. This race window can be long enough to be observed in core
+    dumps, for example if the mmput() takes a long time.
+    
+    This should be considered a bug. A task state of "??" or "(unknown)" is
+    frequently of concern when debugging, as it could indicate that the
+    state fields had some sort of corruption, and draw the attention of the
+    debugger. To handle it properly, record the size of exit_state, and read
+    it conditionally as a UINT or ULONG, just like the state. This ensures
+    we retain compatibility with kernel before v2.6.22. Whether that is
+    actually desirable is anybody's guess.
+    
+    Reported-by: Jeffery Yoder <jeffery.yoder@oracle.com>
+    Signed-off-by: Stephen Brennan <stephen.s.brennan@oracle.com>
+
+commit a18b8a7fb83ae79f5c0698063f26ec8a289cf90b
+Author: Alexey Makhalov <alexey.makhalov@broadcom.com>
+Date:   Wed Apr 30 21:54:27 2025 +0000
+
+    vmware_guestdump: Version 7 support
+    
+    ESXi 9.0 updated debug.guest format. CPU architecture type was
+    introduced and several fields of the header not used by the crash
+    were moved around. It is version 7 now.
+    
+    Make corresponding changes in debug.guest parser and keep it
+    backward compatible with older versions.
+    
+    Fix comment and log messages typos as well.
+    
+    Signed-off-by: Alexey Makhalov <alexey.makhalov@broadcom.com>
+
+commit 57c97d48523ff3be00501399446fe535ee79ea07
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Tue May 20 17:02:43 2025 +0800
+
+    CI: enable ci-test with Testing Farm as github action
+    
+    Currently, only enable the test on Fedora Rawhide x86 64, for other
+    architectures such as aarch64, ppc64le and s390x, they will fail because
+    of Beaker issues, not involving in Testing Farm.
+    
+    Once known issues are resolved, it's easy to enable on other arches as
+    below:
+    
+      arch: [x86_64, aarch64, ppc64le, s390x]
+    
+    Similarly, it's also easy to enable on other OS such as CentOS:
+    
+      compose: [Fedora-Rawhide, CentOS-Stream-10]
+    
+    Note: if the current testcases need to be added or modified in the
+    future, only need to do that in the github Repo(see the Link).
+    
+    Link: https://github.com/crash-utility/crash-test
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 4002f53cd086e697b565dfb3531548aeb36854cb
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri May 16 09:27:29 2025 +0800
+
+    Mark start of 9.0.1 development phase with version 9.0.0++
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
