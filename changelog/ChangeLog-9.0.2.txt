@@ -1,0 +1,617 @@
+commit 61fe107ff96a22e7df0029877529b7ce6da36850
+Author: Tao Liu <ltao@redhat.com>
+Date:   Fri Apr 24 15:14:08 2026 +1200
+
+    crash-9.0.1 -> crash-9.0.2
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit ad427b7f8ffc24c9621a1836d8027d5992c9a11a
+Author: Bruno Faccini <bfaccini@nvidia.com>
+Date:   Mon Mar 23 12:55:40 2026 +0100
+
+    fix eheader overflow
+    
+    crash-utility live session fails solid with a SEGV, where it seems
+    that with some (new ?) Kernels and configurations /proc/kcore
+    exposes a first “Note” program-header along with a big number of
+    other headers (particularly when direct-map area generated from
+    physical memory map have a lot of entries), causing eheader[]
+    overflow (a stack underflow in fact since it is an automatic
+    variable!) because the whole size exceeds MAX_KCORE_ELF_HEADER_SIZE.
+    This problem still occur with latest utility version, and the
+    following patch has been proven to fix.
+    
+    Signed-off-by: Bruno Faccini <bfaccini@nvidia.com>
+
+commit ff063ed0df6c99675b060cdbe1cc778766232756
+Author: Austin Kim <austindh.kim@gmail.com>
+Date:   Tue Mar 31 16:28:26 2026 +0900
+
+    RISC-V: improve error message for search command failure
+    
+    The search command currently fails on RISC-V based vmcores
+    without providing specific details, only printing a generic 'invalid' message.
+    This patch enhances the debug output by including the specific virtual address
+    
+    (before)
+    crash> search ffffffd8c2b42280
+    invalid
+    
+    (after)
+    crash> search ffffffd8c2b42280
+    invalid for ffffffd800000000 address
+    
+    Signed-off-by: Austin Kim <austindh.kim@gmail.com>
+
+commit 0b69dde61aee31b0008564a2e98c15e2438817e0
+Author: Petr Tesařík <petr@tesarici.cz>
+Date:   Thu Mar 12 21:17:22 2026 +0100
+
+    Fix cross-compilation of eppic.so and snapper.so
+    
+    When cross-compiling, the extension modules must be built for the
+    target architecture, not the host architecture.
+    
+    Do not hard-code "gcc" (which is usually the host compiler), but
+    use $(CC) to pick the right compiler.
+    
+    Signed-off-by: Petr Tesarik <ptesarik@suse.com>
+
+commit 95c1b0a1ddeeb23cfe4565ff917e3575e06fed91
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Fri Feb 13 18:15:38 2026 +0800
+
+    Fix for "help -r/-D" to display register values and notes[]
+    
+    Currently, when executing the "help -r" command on the aarch64
+    architecture, only the register values of crashing cpu are displayed,
+    but the register values of other cpus are not shown with the following
+    messages:
+    
+      crash> help -r
+      CPU 0:
+      help: registers not collected for cpu 0
+    
+      CPU 1:
+          X0: 4000000000000000   X1: ffffc8c40d453d30   X2: ffff37436ecd0000
+          X3: ffffc8c40d475340   X4: 00000000000968a4   X5: 4000000000000000
+          X6: 4000000000000000   X7: 7fffffffffffffff   X8: 0000016f2a240000
+          X9: ffffc8c40b0c64fc  X10: 0000000000001000  X11: 00000000000000c0
+         X12: 0000000000000000  X13: 0000000000000072  X14: 0000000000000072
+         X15: 0000aaab0f98a320  X16: 0000000000000000  X17: 0000000000000000
+         X18: 0000000000000000  X19: 0000000000000000  X20: 0000000000000000
+         X21: ffffc8c40d475340  X22: ffffc8c40d460b80  X23: 00000000000000c0
+         X24: 00000007bf68b1b0  X25: 00000007b9284000  X26: 00000007bf68b1a8
+         X27: 00000007bbc95a40  X28: 00000007bbc6805a  X29: ffffc8c40d453d80
+          LR: ffffc8c40bebd5d8   SP: ffffc8c40d453d80   PC: ffffc8c40bebd5e8
+         PSTATE: 60400005   FPVALID: 00000000
+    
+      CPU 2:
+      help: registers not collected for cpu 2
+    
+      CPU 3:
+      help: registers not collected for cpu 3
+    
+      crash> help -D
+      ...
+        num_prstatus_notes: 4
+                notes[0]: 0
+                notes[1]: dafa380 (NT_PRSTATUS)
+                          si.signo: 0  si.code: 0  si.errno: 0
+                          cursig: 0  sigpend: 0  sighold: 0
+                          pid: 0  ppid: 0  pgrp: 0  sid:0
+                          utime: 0.000000  stime: 0.000000
+                          cutime: 0.000000  cstime: 0.000000
+                           X0: 4000000000000000   X1: ffffc8c40d453d30   X2: ffff37436ecd0000
+                           X3: ffffc8c40d475340   X4: 00000000000968a4   X5: 4000000000000000
+                           X6: 4000000000000000   X7: 7fffffffffffffff   X8: 0000016f2a240000
+                           X9: ffffc8c40b0c64fc  X10: 0000000000001000  X11: 00000000000000c0
+                          X12: 0000000000000000  X13: 0000000000000072  X14: 0000000000000072
+                          X15: 0000aaab0f98a320  X16: 0000000000000000  X17: 0000000000000000
+                          X18: 0000000000000000  X19: 0000000000000000  X20: 0000000000000000
+                          X21: ffffc8c40d475340  X22: ffffc8c40d460b80  X23: 00000000000000c0
+                          X24: 00000007bf68b1b0  X25: 00000007b9284000  X26: 00000007bf68b1a8
+                          X27: 00000007bbc95a40  X28: 00000007bbc6805a  X29: ffffc8c40d453d80
+                           LR: ffffc8c40bebd5d8   SP: ffffc8c40d453d80   PC: ffffc8c40bebd5e8
+                          PSTATE: 60400005   FPVALID: 00000000
+                notes[2]: 0
+                notes[3]: 0
+      ...
+    
+    To fix the current issue, let's map to present cpus instead of online
+    cpus.
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit d34554f3437b424028c5aa06ece5006e91718fb9
+Author: Shivang Upadhyay <shivangu@linux.ibm.com>
+Date:   Tue Feb 24 13:55:06 2026 +0530
+
+    Reapply "vmcoreinfo: read vmcoreinfo using 'vmcoreinfo_data' when unavailable in elf note"
+    
+    Commit 7636c13 ("vmcoreinfo: read vmcoreinfo using 'vmcoreinfo_data'
+    when unavailable in elf note") moved the vmcoreinfo reading to always
+    read from memory instead of relying on diskdump/netdump's local
+    handlers. This was later reverted to fix regression in X86_64 kslar
+    images.
+    
+    Reintroduce the `vmcoreinfo_read_from_memory` as fallback to
+    diskdump/netdump vmcores.
+    
+    Sometimes, vmcoreinfo_data is found within the primary format handler,
+    but the symbol is not availbale. Pairing this case with vmcoreinfo missing
+    from memory we can hit the following warning.
+    
+    $ ~/crash-dev/crash.aft vmcore vmlinux.gz
+    ...
+    GNU gdb (GDB) 16.2
+    Copyright (C) 2024 Free Software Foundation, Inc.
+    ...
+    Type "apropos word" to search for commands related to "word"...
+    
+    crash.aft: cannot read vmcoreinfo_data <<--------------
+          KERNEL: vmlinux.gz
+        DUMPFILE: vmcore  [PARTIAL DUMP]
+    ...
+    crash.aft>
+    
+    To fix this, We will only fallback to `vmcoreinfo_read_from_memory`,
+    when the vmcoreinfo_data is not found within the format handler.
+    
+    This reverts commit 72e2776caf1ca41dffcc8aba11c55c636565725b.
+    
+    Cc: Aditya Gupta <adityag@linux.ibm.com>
+    Cc: Tao Liu <ltao@redhat.com>
+    Cc: Misbah Anjum N <misanjum@linux.ibm.com>
+    Signed-off-by: Shivang Upadhyay <shivangu@linux.ibm.com>
+
+commit 91a961600bd8f8fb56e098b0557ae3c95ebe834a
+Author: neilfsun <loyou85@gmail.com>
+Date:   Wed Feb 11 09:50:04 2026 +0800
+
+    Fix file redirection not working for external commands in input files
+    
+    When executing external commands (echo, cat, etc.) from input files
+    with file redirection (>), the output was not properly redirected to
+    the file but instead printed to stdout.
+    
+      crash> cat crashrc
+      echo hi > 1
+      cat 1
+      crash> <crashrc
+      crash> echo hi > 1
+      hi
+      crash> cat 1
+      crash>
+    
+    When file redirection was used, the code fell through to system() which
+    outputs to stdout instead of using the global fp that was correctly set
+    by setup_redirect().
+    
+    Signed-off-by: neilfsun <neilfsun@tencent.com>
+    Signed-off-by: Feng Sun <loyou85@gmail.com>
+
+commit 1ae0ca8dcaf651cb0f12e19852c92a91f43f8db8
+Author: neilfsun <loyou85@gmail.com>
+Date:   Wed Feb 11 09:51:27 2026 +0800
+
+    Fix pipe parsing to correctly handle quotes
+    
+    When parsing command lines with pipes, the previous logic incorrectly
+    handled nested quote types. The string detection used a simple
+    boolean toggle that would flip state for ANY quote character (single or
+    double), causing pipes inside quoted strings to be incorrectly recognized
+    as command separators. Without the fix, the following commands will stuck:
+    
+      crash> help -t | awk '/panic_processor/{print "p cpu_info:"$2" | grep phys_proc_id"}'
+    
+    Signed-off-by: neilfsun <neilfsun@tencent.com>
+    Signed-off-by: Feng Sun <loyou85@gmail.com>
+
+commit fe017d7cb95ac4703ce59e4c72fd73a5fad3bcea
+Author: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+Date:   Mon Feb 16 20:39:15 2026 +0100
+
+    memory: Handle crash failure in linux-next caused by struct kmem_cache changes
+    
+    Since kernel commit cf338283652f ("slab: remove struct kmem_cache_cpu")
+    in linux-next there is no more 'cpu_slab' member in struct kmem_cache.
+    Pick 'cpu_sheaves' as an alternative kmem_cache member for kernel-next to
+    identify the SLUB case.
+    
+    Without the patch, crash fails to start on kernel-next with the error
+    message:
+    
+      crash: invalid structure member offset: kmem_cache_s_num
+                FILE: memory.c  LINE: 9988  FUNCTION: kmem_cache_init()
+    
+    This fix:
+    - allows the crash to start with no errors for kernel-next.
+    - make the 'kmap -s' command working again for kernel-next.
+    - throws an error message on 'kmem -S' command if no 'cpu_slab' member
+      presents in struct kmem_cache:
+            kmem: -S not supported for this kernel
+    
+    Signed-off-by: Mikhail Zaslonko <zaslonko@linux.ibm.com>
+
+commit daad20dd1224fd273428b292a3e86aa30754b61e
+Author: neilfsun <loyou85@gmail.com>
+Date:   Thu Dec 4 22:27:47 2025 +0800
+
+    Fix external command output not redirected to pipe
+    
+    When executing external commands (cat, etc.) with pipes,
+    the command output was not properly redirected to the pipe.
+    
+      crash> cat /tmp/testfile
+      line1
+      line2
+      line3
+      crash> cat /tmp/testfile | head -1
+      line1
+      line2
+      line3
+      crash>
+    
+    Signed-off-by: neilfsun <neilfsun@tencent.com>
+    Signed-off-by: Feng Sun <loyou85@gmail.com>
+
+commit 16d7afb935e5e27eadc324856c3b0319eda38242
+Author: neilfsun <loyou85@gmail.com>
+Date:   Thu Dec 4 14:34:37 2025 +0800
+
+    Fix prompt output interfering with piped commands in input files
+    
+    When executing piped commands from input files, the prompt text was
+    incorrectly written to the pipe instead of stdout.
+    This caused commands read the prompt as their first line,
+    consuming it instead of the actual command output.
+    
+      crash> p cpu_info:0 | head -1
+      per_cpu(cpu_info, 0) = $29 = {
+      crash> p cpu_info:0 | head -2
+      per_cpu(cpu_info, 0) = $4 = {
+        x86 = 0x6,
+      crash> cat crashrc1
+      p cpu_info:0 | head -1
+      crash> < crashrc1
+      crash> p cpu_info:0 | head -1
+    
+      crash> cat crashrc2
+      p cpu_info:0 | head -2
+      crash> < crashrc2
+      crash> p cpu_info:0 | head -2
+      per_cpu(cpu_info, 0) = $30 = {
+      crash>
+    
+    Fix: Output prompt to incoming_fp (stdout) instead of fp (which may be the pipe
+    after setup_redirect()), ensuring prompts display on terminal while command output
+    goes to the pipe as intended.
+    
+    Signed-off-by: neilfsun <neilfsun@tencent.com>
+    Signed-off-by: Feng Sun <loyou85@gmail.com>
+
+commit aedad47f6408e03b8ed6008e2df7adcaa1dda9c1
+Author: neilfsun <loyou85@gmail.com>
+Date:   Wed Dec 3 10:35:57 2025 +0800
+
+    Ensure all child processes are properly cleaned up in restore_ifile_sanity
+    
+    Run input file with pipe cmdlines will get nothing output.
+    
+        crash> p cpu_info:0 | grep 'x86 ='
+          x86 = 0x19,
+        crash> cat crashrc
+        p cpu_info:0 | grep 'x86 ='
+        p cpu_info:0 | grep 'x86 ='
+        crash> < crashrc
+        crash> p cpu_info:0 | grep 'x86 ='
+          x86 = 0x19,
+        crash> p cpu_info:0 | grep 'x86 ='
+    
+        crash>
+    
+    Signed-off-by: neilfsun <neilfsun@tencent.com>
+    Signed-off-by: Feng Sun <loyou85@gmail.com>
+
+commit 24b5405eb6f67a96e8b5bbd5c8de8f22dfefd092
+Author: Motomasa Suzuki <moto0123moto@gmail.com>
+Date:   Tue Dec 23 00:50:25 2025 -0500
+
+    sys: Display livepatch transition status in KERNEL line
+    
+    This commit enhances the 'sys' command to show if a kernel livepatch is
+    currently in a transition phase, directly within the KERNEL output line.
+    
+    Currently, diagnosing system state during or immediately after livepatch
+    operations can be ambiguous. While 'livepatch' is indicated by
+    '[LIVEPATCH]', there's no direct indicator within 'crash' itself to
+    show if a livepatch is actively applying, reverting, or in some other
+    transient state. This lack of immediate visibility can complicate crash
+    analysis, as the system might be in an inconsistent state due to an
+    ongoing patch application/reversion.
+    
+    This change introduces a new '[TRANSITION]' flag which appears next to
+    '[LIVEPATCH]' and '[TAINTED]' in the 'sys' command output. This
+    flag is set if the livepatch subsystem indicates an in-progress
+    transition
+    (e.g., as exposed via '/sys/kernel/livepatch/<patch_name>/transition').
+    
+    Example 'sys' output with this change:
+      KERNEL: /usr/lib/debug/lib/modules/<version_name>/vmlinux [LIVEPATCH]
+    [TRANSITION]  [TAINTED]
+    
+    This enhancement provides critical, at-a-glance information for
+    developers and administrators, allowing them to quickly ascertain if
+    ongoing livepatch activity might be influencing a system's behavior
+    during crash investigations. It directly leverages existing kernel
+    livepatch status infrastructure to enrich the crash utility's diagnostic
+    capabilities.
+    
+    Changes v1 -> v2:
+    - Reworked klp_patches list traversal to use the crash utility’s
+    do_list() helper instead of manual list handling.
+    
+    Signed-off-by: Motomasa Suzuki <moto0123moto@gmail.com>
+
+commit 8510483a7e1f7d122130304a97f1d7cc8f81ffb4
+Author: stalexan@redhat.com <stalexan@redhat.com>
+Date:   Mon Jan 19 19:18:10 2026 +0000
+
+    maple_tree: add support for maple_tree.c output to respect the global radix and per-command -x/d flags
+    
+    The commands that generate maple tree output do not currently respect the
+    global radix setting, nor do they respect the -x output flag.  This
+    patch aims to fix this inconsistency, so that the output commands
+    respect both the global radix setting as well as the per-command -x/d
+    flags.
+    
+    Signed-off-by: Sterling Alexander <stalexan@redhat.com>
+
+commit 36bffee60ba697371600cf9c33b7767ac6c0ee88
+Author: Lianbo Jiang <lijiang@redhat.com>
+Date:   Thu Jan 15 16:27:04 2026 +0800
+
+    Fix for "mod -S" causes symbols to be incorrect
+    
+    Currently, the "mod -S" command may cause that the "bt/sym" commands
+    incorrectly translate the kernel module virtual address to symbol names,
+    if a kernel module contains a per-cpu section, this was reported on
+    PPC64 kernel.
+    
+    Without the patch:
+      crash> mod -S ../usr/lib/debug/lib/modules/5.14.0-xxx.ppc64le
+      ...
+      crash> bt
+      PID: 35705    TASK: c0000000b0365680  CPU: 16   COMMAND: "lsof"
+      ...
+       [NIP  : __key.7+32443920]
+       [LR   : __key.7+32446288]
+       #4 [c0000000394df9c0] __key.7 at c00800001ce82040 [overlay]  (unreliable)
+       #5 [c0000000394dfa00] walk_component at c0000000005c914c
+      ...
+      crash> sym c00800001ce82040
+      c00800001ce82040 (b) __key.7+32443920 [bnx2i] /usr/src/debug/kernel-5.14.0-xxx/linux-5.14.0-xxx.ppc64le/fs/overlayfs/super.c: 122
+    
+    With the patch:
+      crash> mod -S ../usr/lib/debug/lib/modules/5.14.0-xxx.ppc64le
+      ...
+      crash> bt
+      PID: 35705    TASK: c0000000b0365680  CPU: 16   COMMAND: "lsof"
+      ...
+       [NIP  : ovl_revalidate_real+40]
+       [LR   : ovl_dentry_revalidate_common+136]
+       #4 [c0000000394df9c0] ovl_revalidate_real at c00800001ce82040 [overlay]
+       #5 [c0000000394dfa00] walk_component at c0000000005c914c
+      ...
+      crash> sym c00800001ce82040
+      c00800001ce82040 (t) ovl_revalidate_real+40 [overlay] /usr/src/debug/kernel-5.14.0-xxx/linux-5.14.0-xxx.ppc64le/fs/overlayfs/super.c: 122
+    
+    Signed-off-by: Lianbo Jiang <lijiang@redhat.com>
+
+commit 6fdc9a133d46845b790e664a747eb665fa6d1e53
+Author: Austin Kim <austindh.kim@gmail.com>
+Date:   Tue Jan 13 10:54:27 2026 +0900
+
+    RISCV64: fix wrong information of P4D, PUD, PMD and PTE - SA57(4K page)
+    
+    As for SA57(4K page) in RISC-V based vmcore, 'vtop address' command
+    produces the misleading information, including P4D, PUD, PMD, PTE.
+    
+    This commit is based on the following previous commit:
+    commit 536a0d78f1fa ("RISCV64: fix wrong information of PMD and PTE - SA39(4K page)")
+    
+    Signed-off-by: Austin Kim <austindh.kim@gmail.com>
+
+commit e91e1417c213f45d57600f67801f521055712a6e
+Author: Austin Kim <austindh.kim@gmail.com>
+Date:   Tue Jan 13 10:54:01 2026 +0900
+
+    RISCV64: fix wrong information of PUD, PMD and PTE - SA48(4K page)
+    
+    As for SA48(4K page) in RISC-V based vmcore, 'vtop address' command
+    produces the misleading information, including PUD, PMD, PTE.
+    
+    This commit is based on the following previous commit:
+    
+    commit 536a0d78f1fa ("RISCV64: fix wrong information of PMD and PTE - SA39(4K page)")
+    
+    Signed-off-by: Austin Kim <austindh.kim@gmail.com>
+
+commit c601b311dd09dfbdca13dc2f06e9ff440fe92718
+Author: Luis Galdos <luis.galdos@suse.com>
+Date:   Wed Dec 17 08:13:50 2025 +0000
+
+    bpf: improve for-loop when searching for used_maps
+    
+    As the list bpf->maplist contains unique pointers, break when a
+    map is found.
+    
+    Signed-off-by: Luis Galdos <luis.galdos@suse.com>
+
+commit 4740b8891abf17ff2e957f85b8fa157b1fe0608f
+Author: Tao Liu <ltao@redhat.com>
+Date:   Mon Dec 15 10:49:30 2025 +1300
+
+    Resolve BLK_MQ_F_TAG_HCTX_SHARED at runtime
+    
+    Though upstream kernel have defined BLK_MQ_F_TAG_HCTX_SHARED
+    as (1 << 3), the value might be set different, e.g. [1]. In
+    this patch, we will use enumerator_value() to get its value
+    at runtime, to make the code more adaptable.
+    
+    [1]: https://gitlab.com/redhat/centos-stream/src/kernel/centos-stream-8/-/blob/c8s/include/linux/blk-mq.h?ref_type=heads#L321
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
+commit e205c09f514aa3ce1ae2e118cf498b3fd031d055
+Author: Chenghao Duan <duanchenghao@kylinos.cn>
+Date:   Thu Dec 11 09:41:18 2025 +0800
+
+    Loongarch: update the NR_CPUS to 2048
+    
+    Since the kernel commit 9559d5806319 ("LoongArch: Increase max
+    supported CPUs up to 2048")the NR_CPUS on Linux kernel ranges
+    from 2-2048. So let's match NR_CPUS with the max NR_CPUS count
+    on the Linux kernel.
+    
+    Signed-off-by: Chenghao Duan <duanchenghao@kylinos.cn>
+
+commit 6693c724382bababf9664609f0a44f74bd3c4dc3
+Author: Munehisa Kamata <kamatam@amazon.com>
+Date:   Mon Dec 8 10:16:17 2025 -0800
+
+    Add a command line option to retrieve build-id
+    
+    Resending because my previous post is held for presumably being sent
+    without a list subscription.
+    
+    Since Linux kernel commit 0935288c6e00 ("kdump: append kernel build-id
+    string to VMCOREINFO") merged in v5.9, VMCOREINFO data contains a kernel
+    build-id. Add a simple --build-id command line option that retrieves the
+    build-id from a kernel dump file, which works just like the existing
+    --osrelease option (and the implementation mimics it).
+    
+     Example:
+     # crash --build-id /var/crash/127.0.0.1-2025-11-28-00\:33\:07/vmcore
+     03cc3b4eb67df4e66a6a794a39521bafabef0886
+    
+    While we may also want to implement the strict build-id based
+    verification between namelist and dump file, this would be still handy
+    for some scripting or automation tasks without namelist.
+    
+    Signed-off-by: Munehisa Kamata <kamatam@amazon.com>
+
+commit 848d86efe3bd6a56a693b9111f53e17a9496b238
+Author: Shivang Upadhyay <shivangu@linux.ibm.com>
+Date:   Sat Dec 13 18:10:44 2025 +0530
+
+    Doc: add manual and help entry for --max-malloc-bufs option
+    
+    Signed-off-by: Shivang Upadhyay <shivangu@linux.ibm.com>
+
+commit f459c359a63dc36cf1005a96a3bc2ac81b96d312
+Author: Shivang Upadhyay <shivangu@linux.ibm.com>
+Date:   Mon Dec 8 14:01:16 2025 +0530
+
+    make the MAX_MALLOC_BUFS customizable
+    
+    the default (and minimum) value of MAX_MALLOC_BUFS is 3072, but can be
+    changed with command line with flag `--max-malloc-bufs`.
+    
+    Signed-off-by: Shivang Upadhyay <shivangu@linux.ibm.com>
+
+commit ebccb911c4a1aef7af6d72335531003fb6c9fb6d
+Author: Guanyou.Chen <chenguanyou@xiaomi.com>
+Date:   Fri Dec 5 13:56:38 2025 +0800
+
+    arm64: Fix "vtop" command to display swap information on Linux 6.10 and later
+    
+    Kernel commit 798cb7f9aec3 ("swapon(2)/swapoff(2): don't bother with
+    block size") removed swap_info_struct.old_block_size member at Linux
+    6.10-rc1.  The crash-utility has used this to determine whether a swap
+    is a partition or file and to determine the way to get the swap path.
+    
+    before:
+        crash> vtop 2000000
+        VIRTUAL     PHYSICAL
+        2000000     (not mapped)
+    
+        PAGE DIRECTORY: ffffff8106356000
+           PGD: ffffff8106356000 => 800000186355003
+           PMD: ffffff8106355080 => 8000001476f5003
+           PTE: ffffff80c76f5000 => 101a62004
+    
+           PTE       OFFSET: 1055330
+        vtop: cannot determine swap location
+    
+    after:
+        crash> vtop 2000000
+        VIRTUAL     PHYSICAL
+        2000000     (not mapped)
+    
+        PAGE DIRECTORY: ffffff8106356000
+           PGD: ffffff8106356000 => 800000186355003
+           PMD: ffffff8106355080 => 8000001476f5003
+           PTE: ffffff80c76f5000 => 101a62004
+    
+           PTE                     SWAP                  OFFSET
+        101a62004  /first_stage_ramdisk/dev/block/zram0  1055330
+    
+              VMA           START       END     FLAGS FILE
+        ffffff81a06e8b00    2000000   22000000 100073
+    
+        SWAP: /first_stage_ramdisk/dev/block/zram0  OFFSET: 1055330
+    
+    Signed-off-by: Guanyou.Chen <chenguanyou@xiaomi.com>
+
+commit d118315931634f32cd6ffb50e27e75b7a8ea489e
+Author: Guanyou.Chen <chenguanyou@xiaomi.com>
+Date:   Fri Dec 5 13:55:30 2025 +0800
+
+    arm64: Fix "vtop" command to display swap information on Linux 6.10 and later
+    
+    Kernel commit 55564814a838 ("arm64/mm: Move PTE_PRESENT_INVALID
+    to overlay PTE_NG"), which is contained in Linux 6.10 and
+    later kernels, changed the format of swap entries on arm64.
+    Without the patch, the "vtop" command cannot display swap information
+    
+    Link: https://lore.kernel.org/r/20240503144604.151095-4-ryan.roberts@arm.com
+    Signed-off-by: Guanyou.Chen <chenguanyou@xiaomi.com>
+
+commit adca73ffa30eef4ab67a1a6d636e790cab93d902
+Author: Dominique Martinet <dominique.martinet@atmark-techno.com>
+Date:   Wed Nov 5 13:43:51 2025 +0900
+
+    Fix typo: uncompess -> uncompress
+
+commit 89e41397424a93b92cdc7d5458c33a317b2bd8f4
+Author: HAGIO KAZUHITO(萩尾　一仁) <k-hagio-ab@nec.com>
+Date:   Tue Nov 18 07:13:29 2025 +0000
+
+    Fix "timer -r" option on Linux 6.18 and later kernels
+    
+    Kernel commit 009eb5da29a9 ("hrtimer: Remove hrtimer_clock_base::
+    Get_time") removed the get_time member from struct hrtimer_clock_base.
+    As a result, the "timer -r" option fails with the following error:
+    
+      crash> timer -r
+      timer: invalid structure member offset: hrtimer_clock_base_get_time
+              FILE: kernel.c  LINE: 7953  FUNCTION: dump_hrtimer_clock_base()
+    
+    As the get_time function is switched by __hrtimer_cb_get_time() function
+    with clock_id macro value, crash cannot follow their changes
+    automatically.  So change what "timer -r" displays there from the
+    get_time function name to enum hrtimer_base_type name.
+    
+    Signed-off-by: Kazuhito Hagio <k-hagio-ab@nec.com>
+
+commit 8f89bc1c665895b254095ae9129fd8b6b4df4ef9
+Author: Tao Liu <ltao@redhat.com>
+Date:   Thu Nov 20 21:28:01 2025 +1300
+
+    Mark start of 9.0.2 development phase with version 9.0.1++
+    
+    Signed-off-by: Tao Liu <ltao@redhat.com>
+
