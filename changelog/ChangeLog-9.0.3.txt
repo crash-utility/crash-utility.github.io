@@ -2,7 +2,7 @@ The 9.0.3 release covers architecuter fixes and various kernel support
 fixes eg. fixes for the mainline kernel 7.1 and 7.2
 
 Full changelog see see the details in git repo:
-https://github.com/crash-utility/crash/compare/9.0.1...9.0.2
+https://github.com/crash-utility/crash/compare/9.0.2...9.0.3
 
 Changlog:
 35457ac9015a update example nvr in README
