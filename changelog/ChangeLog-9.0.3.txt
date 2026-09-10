@@ -1,40 +1,10 @@
 The 9.0.3 release covers architecuter fixes and various kernel support
 fixes eg. fixes for the mainline kernel 7.1 and 7.2
 
-Full changelog see see the details in git repo.
+Full changelog see see the details in git repo:
+https://github.com/crash-utility/crash/compare/9.0.1...9.0.2
 
-35457ac9015a update example nvr in README
-1c8551c95cd1 rename .rh_rpm_package to crash-release
-14f7004d0f77 Remove dead code of "BASELEVEL_REVISION"
-cc2a942537da Prevent out-of-bounds access of note_buf
-1491c42b7530 loongarch64: enable kaslr offset calculation
-400874bb0351 loongarch64: fix SECTION_SIZE_BITS value
-19d0582f4e3d task: show the NUMA information in task_cpu
-bd0359714aa0 add cpu_to_nid function
-fe61d650e135 riscv64: support leaf PTEs in page table walks
-abcb45e7d443 symbols: use non-debug BFD to retrieve .rodata
-9550178eca33 Refactor kernel version checking code
-bb9a3fa67a79 Fix "kmem [-s]" command on Linux 7.1 and later
-fa55e121672c Fix compound_head() and "bt -F" option on Linux 7.1 and later
-08e9d02d2c46 symbols: optimize symval_hash_init with O(1) tail insertion
-bfce25840cff x86_64: Make ORC_REG_SP and ORC_REG_PREV_SP independent from kernel version
-f336dfa79ed9 (test-2) Fix "runq -g" option to display task_group name on Linux 6.15 and later
-82039b0f21de Fix failure of "runq -g" option on Linux 7.2 and later kernels
-97b7c0a60852 task: Introduce -Y option to ps command to display scheduling policy and priority
-610e52023a42 task: Introduce -I option to ps command to exclude idle tasks
-18d6e9f4852f riscv64: Add get_kvaddr_ranges callback for kernel address ranges
-f5ce0c39b5b4 riscv64: Guard verbose output in vtop page table walk functions
-f6084e0dbf36 riscv64: Set VMEMMAP flag to fix spurious mem_map[] warnings
-2946d9bfa656 LoongArch64: print exception registers only with bt -f
-a35fcc79393c LoongArch64: avoid replacing a valid RA with stack noise
-a436361b2798 LoongArch64: unwind dumpfile active tasks from IRQ stacks
-9e8d1784b910 LoongArch64: add initial ORC unwinder support
-488777428c96 LoongArch64: resolve relocated exception vector addresses
-bf279fbd474f LoongArch64: print exception return address as ERA
-523981942d89 LoongArch64: Add dummy eframe_search to avoid bt -e segfault
-40145cc1f001 LoongArch64: Fix stack frame loop bounds for exception frames
-f3a02a49653b LoongArch64: Support backtracing across exception boundaries
-a507c2f2036e (HEAD -> master, tag: 9.0.3, origin/master, origin/HEAD) crash-9.0.2 -> crash-9.0.3
+Changlog:
 35457ac9015a update example nvr in README
 1c8551c95cd1 rename .rh_rpm_package to crash-release
 14f7004d0f77 Remove dead code of "BASELEVEL_REVISION"
